@@ -7,8 +7,6 @@
             import { GLTexture } from "./loki/gl/gl_texture.js";
             import { GLFramebuffer } from "./loki/gl/gl_frame_buffer.js";
             import { GLRenderbuffer } from "./loki/gl/gl_render_buffer.js";
-            import { Vector2 } from "./loki/math/vector2.js";
-            import { Vector4 } from "./loki/math/vector4.js";
 
             const width = 800;
             const height = 600;
@@ -16,7 +14,13 @@
             const gl = new GLContext({ width, height, preserveDrawingBuffer: false });
             document.body.appendChild(gl.canvas);
 
-            const vertexShader = `#version 300 es
+            const plane = new GLPlaneMesh(gl, { width: 1.9, height: 1.9, z: 0.9 } );
+            const plane2 = new GLPlaneMesh(gl, { z: 0.5 });
+
+            const texture = new GLTexture(gl, {w: 1, h: 1, data: [255,255,0,255]});
+            const texture2 = new GLTexture(gl, {w: 1, h: 1, data: [0,0,255,255]});
+            const shader = new GLShader(gl, 
+                `#version 300 es
                 in vec3 a_P;
                 in vec2 a_uv;
                 out vec2 textureCoord;
@@ -24,15 +28,7 @@
                 void main(void) {
                     gl_Position = vec4(a_P.x, a_P.y + y, a_P.z, 1.0);
                     textureCoord = a_uv;
-                }`;
-
-            const plane = new GLPlaneMesh(gl, { width: 1.9, height: 1.9, z: 0.9 } );
-            const plane2 = new GLPlaneMesh(gl, { z: 0.5 });
-
-            const texture = new GLTexture(gl, {w: 1, h: 1, data: [255,255,0,255]});
-            const texture2 = new GLTexture(gl, {w: 1, h: 1, data: [0,0,255,255]});
-            const shader = new GLShader(gl, 
-                vertexShader,
+                }`,
                 `#version 300 es
                 precision highp float;
                 uniform sampler2D baseColor;
@@ -42,177 +38,30 @@
                     FragColor = texture(baseColor, textureCoord);
                 }`);
 
-                const _noiseFragment = `#version 300 es
-            precision highp float;
-            uniform int mode;
-            uniform vec2 offset;
-            uniform float scale;
-            uniform float depth;
-            uniform vec4 colorStart;
-            uniform vec4 colorEnd;
-
-            in vec2 textureCoord;
-            out vec4 FragColor;
-            uniform sampler2D inputImage;
-            uniform vec2 inputImageSize;
-            uniform sampler2D inputImage2;
-            uniform int pass;
-
-            const int PERLIN_NOISE = 0;
-            const int FBM = 1;
-            const int TURBULENCE = 2;
-
-            vec4 mod289(vec4 x) {
-                return x - floor(x * (1.0 / 289.0)) * 289.0;
-            }
-
-            vec4 permute(vec4 x) {
-                return mod289(((x*34.0)+1.0)*x);
-            }
-
-            vec4 taylorInvSqrt(vec4 r) {
-                return 1.79284291400159 - 0.85373472095314 * r;
-            }
-
-            vec2 fade(vec2 t) {
-                return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-            }
-
-            // Classic Perlin noise
-            float cnoise(vec2 P) {
-                vec4 Pi = floor(P.xyxy) + vec4(0.0, 0.0, 1.0, 1.0);
-                vec4 Pf = fract(P.xyxy) - vec4(0.0, 0.0, 1.0, 1.0);
-                Pi = mod289(Pi); // To avoid truncation effects in permutation
-                vec4 ix = Pi.xzxz;
-                vec4 iy = Pi.yyww;
-                vec4 fx = Pf.xzxz;
-                vec4 fy = Pf.yyww;
-
-                vec4 i = permute(permute(ix) + iy);
-
-                vec4 gx = fract(i * (1.0 / 41.0)) * 2.0 - 1.0 ;
-                vec4 gy = abs(gx) - 0.5 ;
-                vec4 tx = floor(gx + 0.5);
-                gx = gx - tx;
-
-                vec2 g00 = vec2(gx.x,gy.x);
-                vec2 g10 = vec2(gx.y,gy.y);
-                vec2 g01 = vec2(gx.z,gy.z);
-                vec2 g11 = vec2(gx.w,gy.w);
-
-                vec4 norm = taylorInvSqrt(vec4(dot(g00, g00), dot(g01, g01), dot(g10, g10), dot(g11, g11)));
-                g00 *= norm.x;
-                g01 *= norm.y;
-                g10 *= norm.z;
-                g11 *= norm.w;
-
-                float n00 = dot(g00, vec2(fx.x, fy.x));
-                float n10 = dot(g10, vec2(fx.y, fy.y));
-                float n01 = dot(g01, vec2(fx.z, fy.z));
-                float n11 = dot(g11, vec2(fx.w, fy.w));
-
-                vec2 fade_xy = fade(Pf.xy);
-                vec2 n_x = mix(vec2(n00, n01), vec2(n10, n11), fade_xy.x);
-                float n_xy = mix(n_x.x, n_x.y, fade_xy.y);
-                return 2.3 * n_xy;
-            }
-
-            float hash(float n) {
-                return fract(sin(n) * 43758.5453);
-            }
-
-            // iq's nice integer-less noise function
-            // matrix to rotate the noise octaves
-            mat3 m = mat3(0.00,  0.80,  0.60,
-                        -0.80,  0.36, -0.48,
-                        -0.60, -0.48,  0.64);
-
-            float noise(vec3 x) {
-                vec3 p = floor(x);
-                vec3 f = fract(x);
-                f = f * f * (3.0 - 2.0 * f);
-
-                float n = p.x + p.y * 57.0 + 113.0 * p.z;
-
-                float res = mix(mix(mix(hash(n + 0.0), hash(n + 1.0), f.x),
-                                    mix(hash(n + 57.0), hash(n + 58.0), f.x), f.y),
-                                    mix(mix(hash(n + 113.0), hash(n + 114.0), f.x),
-                                    mix(hash(n + 170.0), hash(n + 171.0), f.x), f.y), f.z);
-                return res;
-            }
-
-            float fbm(vec3 p) {
-                float f;
-                f = 0.5000 * noise(p);
-                p = m * p * 2.02;
-                f += 0.2500 * noise(p);
-                p = m * p * 2.03;
-                f += 0.1250 * noise(p);
-                p = m * p * 2.01;
-                f += 0.0625 * noise(p);
-                //p = m * p * 2.02;
-                //f += 0.03125 * abs(noise(p));
-                return f;
-            }
-
-            float turbulence(vec2 p, float freq) {
-                float t = 0.0;
-                for (int i = 0; i < 10; ++i) {
-                    if (freq >= 1.0) {
-                        t += cnoise(p * freq) / freq;
-                    }
-                    freq *= 0.5;
-                }
-                return t;
-            }
-
-            void main() {
-                float n = 0.0;
-                if (mode == PERLIN_NOISE) {
-                    n = (cnoise((textureCoord + offset) * scale*2.0) + 1.0) / 2.0;
-                } else if (mode == FBM) {
-                    n = fbm(vec3((textureCoord - offset) * scale, depth));
-                } else if (mode == TURBULENCE) {
-                    float frequency = depth + 10.0;//30.0;
-                    n = (turbulence((textureCoord - offset) * scale, frequency) + 1.0) / 2.0;
-                }
-
-                FragColor = colorStart + (colorEnd - colorStart) * n;
-            }`;
-            const noiseShader = new GLShader(gl, vertexShader, _noiseFragment);
-
-            var offset = new Vector2(0.0, 0.0);
-            noiseShader.setUniform('mode', 0);
-            noiseShader.setUniform('offset', offset);
-            noiseShader.setUniform('scale', 5);
-            noiseShader.setUniform('depth', 0);
-            noiseShader.setUniform('colorStart', new Vector4(0.0, 0.0, 0.0, 1.0));
-            noiseShader.setUniform('colorEnd', new Vector4(1.0, 1.0, 1.0, 1.0));
-
-            const colorRenderbuffer = new GLRenderbuffer(gl, width, height, gl.RGBA8, 4/*samples*/);
-            const depthRenderbuffer = new GLRenderbuffer(gl, width, height, gl.DEPTH_COMPONENT16, 4/*samples*/);
+            // Rendering to an MSAA depth texture ...
+            const msaaSamples = 4;
+            const colorRenderbuffer = new GLRenderbuffer(gl, width, height, gl.RGBA8, msaaSamples);
+            const depthRenderbuffer = new GLRenderbuffer(gl, width, height, gl.DEPTH_COMPONENT16, msaaSamples);
             const resolveTexture = new GLTexture(gl, { width, height, format: gl.RGBA });
 
             const renderFramebuffer = new GLFramebuffer(gl, colorRenderbuffer, depthRenderbuffer);
             const resolveFramebuffer = new GLFramebuffer(gl, resolveTexture);
 
-            let g = 0;
+            let y = 0;
             gl.onDrawFrame.addListener(function() {
                 renderFramebuffer.bind();
                 gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
 
-                gl.disable(gl.DEPTH_TEST);
+                gl.disable(gl.DEPTH_TEST); // ... and disabling DEPTH_TEST ...
                 gl.depthMask(false);
                 texture.bind();
                 shader.setUniform('y', 0.0);
-                offset.y += 0.001;
-                noiseShader.setUniform('offset', offset);
-                noiseShader.drawMesh(plane);
+                shader.drawMesh(plane);
 
-                gl.enable(gl.DEPTH_TEST);
+                gl.enable(gl.DEPTH_TEST); // ... triggers the bad depth buffer for this draw
                 gl.depthMask(true);
                 texture2.bind();
-                shader.setUniform('y', g);
+                shader.setUniform('y', y);
                 shader.drawMesh(plane2);
 
                 renderFramebuffer.unbind();
@@ -232,9 +81,9 @@
                 shader.setUniform('y', 0);
                 shader.drawMesh(plane);
 
-                g += 0.01;
-                if (g > 1.0)
-                    g = -0.5;
+                y += 0.01;
+                if (y > 1.0)
+                    y = -0.5;
             });
             gl.animate();
         </script>
