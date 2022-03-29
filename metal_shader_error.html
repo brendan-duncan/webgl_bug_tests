@@ -1,0 +1,522 @@
+<html>
+    <body>
+        <script>
+            const res = 800;
+
+            var canvas = document.createElement("canvas");
+            canvas.width = res;
+            canvas.height = res;
+            document.body.appendChild(canvas);
+            var gl = canvas.getContext("webgl2");
+
+            function createTexture(res, format, bytes) {
+                let texture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                if (bytes)
+                    gl.texImage2D(gl.TEXTURE_2D, 0, format, res, res, 0, gl.RGBA, gl.UNSIGNED_BYTE, 
+                                  Uint8Array.from(bytes));
+                else
+                    gl.texStorage2D(gl.TEXTURE_2D, 1, format, res, res);
+
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.bindTexture(gl.TEXTURE_2D, null);
+                return texture;
+            }
+
+            function createProgram(vertexShaderSrc, fragmentShaderSrc) {
+                let vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                gl.shaderSource(vertexShader, vertexShaderSrc);
+                gl.compileShader(vertexShader);
+                let fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(fragmentShader, fragmentShaderSrc);
+                gl.compileShader(fragmentShader);
+                
+                let program = gl.createProgram();
+                gl.attachShader(program, vertexShader);
+                gl.attachShader(program, fragmentShader);
+                
+                gl.linkProgram(program);
+
+                gl.deleteShader(vertexShader);
+                gl.deleteShader(fragmentShader);
+
+                return program;
+            }
+
+            function createQuad(size, z) {
+                let points = Float32Array.from([ -size, -size, z, 
+                                                size, -size, z,
+                                                -size, size, z,
+                                                size, size, z]);
+                let buffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                gl.bufferData(gl.ARRAY_BUFFER, points, gl.STATIC_DRAW);
+                return buffer
+            }
+
+            const instanceCount = 128;
+
+            const program = createProgram(
+                `#version 300 es
+                uniform 	vec3 _WorldSpaceCameraPos;
+                uniform 	vec4 hlslcc_mtx4x4unity_MatrixVP[4];
+                uniform 	int unity_BaseInstanceID;
+                uniform 	vec4 _MainTex_ST;
+                uniform 	vec4 _DetailAlbedoMap_ST;
+                uniform 	mediump float _UVSec;
+                struct unity_Builtins0Array_Type {
+                    vec4 hlslcc_mtx4x4unity_ObjectToWorldArray[4];
+                    vec4 hlslcc_mtx4x4unity_WorldToObjectArray[4];
+                };
+                uniform UnityInstancing_PerDraw0 {
+                    unity_Builtins0Array_Type                unity_Builtins0Array[${instanceCount}];
+                };
+                struct unity_Builtins2Array_Type {
+                    mediump vec4 unity_SHArArray;
+                    mediump vec4 unity_SHAgArray;
+                    mediump vec4 unity_SHAbArray;
+                    mediump vec4 unity_SHBrArray;
+                    mediump vec4 unity_SHBgArray;
+                    mediump vec4 unity_SHBbArray;
+                    mediump vec4 unity_SHCArray;
+                };
+                uniform UnityInstancing_PerDraw2 {
+                    unity_Builtins2Array_Type                unity_Builtins2Array[${instanceCount}];
+                };
+                in highp vec4 in_POSITION0;
+                in mediump vec3 in_NORMAL0;
+                in highp vec2 in_TEXCOORD0;
+                in highp vec2 in_TEXCOORD1;
+                out highp vec4 vs_TEXCOORD0;
+                out highp vec4 vs_TEXCOORD1;
+                out highp vec4 vs_TEXCOORD2;
+                out highp vec4 vs_TEXCOORD3;
+                out highp vec4 vs_TEXCOORD4;
+                out mediump vec4 vs_TEXCOORD5;
+                out highp vec4 vs_TEXCOORD7;
+                flat out highp uint vs_SV_InstanceID0;
+                int u_xlati0;
+                vec4 u_xlat1;
+                mediump vec4 u_xlat16_1;
+                vec4 u_xlat2;
+                mediump float u_xlat16_3;
+                mediump vec3 u_xlat16_4;
+                vec3 u_xlat5;
+                int u_xlati5;
+                vec2 u_xlat10;
+                bool u_xlatb10;
+                void main()
+                {
+                    u_xlati0 = gl_InstanceID + unity_BaseInstanceID;
+                    u_xlati5 = int(u_xlati0 << 3);
+                    u_xlati0 = u_xlati0 * 7;
+                    u_xlat1 = in_POSITION0.yyyy * unity_Builtins0Array[u_xlati5 / 8].hlslcc_mtx4x4unity_ObjectToWorldArray[1];
+                    u_xlat1 = unity_Builtins0Array[u_xlati5 / 8].hlslcc_mtx4x4unity_ObjectToWorldArray[0] * in_POSITION0.xxxx + u_xlat1;
+                    u_xlat1 = unity_Builtins0Array[u_xlati5 / 8].hlslcc_mtx4x4unity_ObjectToWorldArray[2] * in_POSITION0.zzzz + u_xlat1;
+                    u_xlat1 = u_xlat1 + unity_Builtins0Array[u_xlati5 / 8].hlslcc_mtx4x4unity_ObjectToWorldArray[3];
+                    u_xlat2 = u_xlat1.yyyy * hlslcc_mtx4x4unity_MatrixVP[1];
+                    u_xlat2 = hlslcc_mtx4x4unity_MatrixVP[0] * u_xlat1.xxxx + u_xlat2;
+                    u_xlat2 = hlslcc_mtx4x4unity_MatrixVP[2] * u_xlat1.zzzz + u_xlat2;
+                    u_xlat1 = hlslcc_mtx4x4unity_MatrixVP[3] * u_xlat1.wwww + u_xlat2;
+                    gl_Position = u_xlat1;
+                    vs_TEXCOORD1.w = u_xlat1.z;
+                    u_xlatb10 = _UVSec==0.0;
+                    u_xlat10.xy = (bool(u_xlatb10)) ? in_TEXCOORD0.xy : in_TEXCOORD1.xy;
+                    vs_TEXCOORD0.zw = u_xlat10.xy * _DetailAlbedoMap_ST.xy + _DetailAlbedoMap_ST.zw;
+                    vs_TEXCOORD0.xy = in_TEXCOORD0.xy * _MainTex_ST.xy + _MainTex_ST.zw;
+                    u_xlat1.xyz = in_POSITION0.yyy * unity_Builtins0Array[u_xlati5 / 8].hlslcc_mtx4x4unity_ObjectToWorldArray[1].xyz;
+                    u_xlat1.xyz = unity_Builtins0Array[u_xlati5 / 8].hlslcc_mtx4x4unity_ObjectToWorldArray[0].xyz * in_POSITION0.xxx + u_xlat1.xyz;
+                    u_xlat1.xyz = unity_Builtins0Array[u_xlati5 / 8].hlslcc_mtx4x4unity_ObjectToWorldArray[2].xyz * in_POSITION0.zzz + u_xlat1.xyz;
+                    u_xlat1.xyz = unity_Builtins0Array[u_xlati5 / 8].hlslcc_mtx4x4unity_ObjectToWorldArray[3].xyz * in_POSITION0.www + u_xlat1.xyz;
+                    vs_TEXCOORD1.xyz = u_xlat1.xyz + (-_WorldSpaceCameraPos.xyz);
+                    u_xlat1.w = 0.0;
+                    vs_TEXCOORD2 = u_xlat1.wwwx;
+                    vs_TEXCOORD3 = u_xlat1.wwwy;
+                    vs_TEXCOORD4.w = u_xlat1.z;
+                    u_xlat1.x = dot(in_NORMAL0.xyz, unity_Builtins0Array[u_xlati5 / 8].hlslcc_mtx4x4unity_WorldToObjectArray[0].xyz);
+                    u_xlat1.y = dot(in_NORMAL0.xyz, unity_Builtins0Array[u_xlati5 / 8].hlslcc_mtx4x4unity_WorldToObjectArray[1].xyz);
+                    u_xlat1.z = dot(in_NORMAL0.xyz, unity_Builtins0Array[u_xlati5 / 8].hlslcc_mtx4x4unity_WorldToObjectArray[2].xyz);
+                    u_xlat5.x = dot(u_xlat1.xyz, u_xlat1.xyz);
+                    u_xlat5.x = inversesqrt(u_xlat5.x);
+                    u_xlat5.xyz = u_xlat5.xxx * u_xlat1.xyz;
+                    vs_TEXCOORD4.xyz = u_xlat5.xyz;
+                    u_xlat16_3 = u_xlat5.y * u_xlat5.y;
+                    u_xlat16_3 = u_xlat5.x * u_xlat5.x + (-u_xlat16_3);
+                    u_xlat16_1 = u_xlat5.yzzx * u_xlat5.xyzz;
+                    u_xlat16_4.x = dot(unity_Builtins2Array[u_xlati0 / 7].unity_SHBrArray, u_xlat16_1);
+                    u_xlat16_4.y = dot(unity_Builtins2Array[u_xlati0 / 7].unity_SHBgArray, u_xlat16_1);
+                    u_xlat16_4.z = dot(unity_Builtins2Array[u_xlati0 / 7].unity_SHBbArray, u_xlat16_1);
+                    vs_TEXCOORD5.xyz = unity_Builtins2Array[u_xlati0 / 7].unity_SHCArray.xyz * vec3(u_xlat16_3) + u_xlat16_4.xyz;
+                    vs_TEXCOORD5.w = 0.0;
+                    vs_TEXCOORD7 = vec4(0.0, 0.0, 0.0, 0.0);
+                    vs_SV_InstanceID0 =  uint(gl_InstanceID);
+                    return;
+                }`,
+
+                `#version 300 es
+                #extension GL_EXT_shader_texture_lod : enable
+                #extension GL_EXT_shader_framebuffer_fetch : enable
+
+                precision highp float;
+                precision highp int;
+                uniform 	mediump vec4 _WorldSpaceLightPos0;
+                uniform 	mediump vec4 unity_OcclusionMaskSelector;
+                uniform 	mediump vec4 unity_FogColor;
+                uniform 	vec4 unity_FogParams;
+                uniform 	vec4 unity_SpecCube0_BoxMax;
+                uniform 	vec4 unity_SpecCube0_BoxMin;
+                uniform 	vec4 unity_SpecCube0_ProbePosition;
+                uniform 	mediump vec4 unity_SpecCube0_HDR;
+                uniform 	vec4 unity_SpecCube1_BoxMax;
+                uniform 	vec4 unity_SpecCube1_BoxMin;
+                uniform 	vec4 unity_SpecCube1_ProbePosition;
+                uniform 	mediump vec4 unity_SpecCube1_HDR;
+                uniform 	vec4 unity_ProbeVolumeParams;
+                uniform 	vec4 hlslcc_mtx4x4unity_ProbeVolumeWorldToObject[4];
+                uniform 	vec3 unity_ProbeVolumeSizeInv;
+                uniform 	vec3 unity_ProbeVolumeMin;
+                uniform 	int unity_BaseInstanceID;
+                uniform 	mediump vec4 _LightColor0;
+                uniform 	mediump vec4 _SpecColor;
+                uniform 	mediump vec4 _Color;
+                uniform 	float _Glossiness;
+                uniform 	mediump float _OcclusionStrength;
+                struct unity_Builtins2Array_Type {
+                    mediump vec4 unity_SHArArray;
+                    mediump vec4 unity_SHAgArray;
+                    mediump vec4 unity_SHAbArray;
+                    mediump vec4 unity_SHBrArray;
+                    mediump vec4 unity_SHBgArray;
+                    mediump vec4 unity_SHBbArray;
+                    mediump vec4 unity_SHCArray;
+                };
+                uniform UnityInstancing_PerDraw2 {
+                    unity_Builtins2Array_Type                unity_Builtins2Array[${instanceCount}];
+                };
+                uniform mediump sampler2D _MainTex;
+                uniform mediump sampler2D _OcclusionMap;
+                //uniform mediump samplerCube unity_SpecCube0;
+                //uniform mediump samplerCube unity_SpecCube1;
+                //uniform highp sampler3D unity_ProbeVolumeSH;
+                in highp vec4 vs_TEXCOORD0;
+                in highp vec4 vs_TEXCOORD1;
+                in highp vec4 vs_TEXCOORD2;
+                in highp vec4 vs_TEXCOORD3;
+                in highp vec4 vs_TEXCOORD4;
+                in mediump vec4 vs_TEXCOORD5;
+                flat in highp uint vs_SV_InstanceID0;
+                layout(location = 0) out mediump vec4 SV_Target0;
+                vec4 u_xlat0;
+                mediump float u_xlat16_1;
+                vec3 u_xlat2;
+                bool u_xlatb2;
+                vec4 u_xlat3;
+                int u_xlati3;
+                vec4 u_xlat4;
+                mediump vec4 u_xlat16_4;
+                vec4 u_xlat5;
+                mediump vec4 u_xlat16_6;
+                mediump vec3 u_xlat16_7;
+                vec4 u_xlat8;
+                vec3 u_xlat9;
+                mediump vec4 u_xlat16_10;
+                vec3 u_xlat11;
+                bvec3 u_xlatb12;
+                float u_xlat13;
+                mediump vec3 u_xlat16_14;
+                vec3 u_xlat15;
+                float u_xlat16;
+                bool u_xlatb16;
+                vec3 u_xlat18;
+                mediump vec3 u_xlat16_19;
+                vec3 u_xlat21;
+                vec3 u_xlat23;
+                mediump vec3 u_xlat16_23;
+                float u_xlat26;
+                float u_xlat28;
+                float u_xlat29;
+                bool u_xlatb29;
+                mediump float u_xlat16_32;
+                mediump float u_xlat16_36;
+                float u_xlat39;
+                bool u_xlatb39;
+                float u_xlat41;
+                float u_xlat42;
+                mediump float u_xlat16_46;
+                void main()
+                {
+                    u_xlat0.xyz = texture(_MainTex, vs_TEXCOORD0.xy).xyz;
+                    u_xlat0.xyz = u_xlat0.xyz * _Color.xyz;
+                    u_xlat16_1 = max(_SpecColor.y, _SpecColor.x);
+                    u_xlat16_1 = max(u_xlat16_1, _SpecColor.z);
+                    u_xlat16_1 = (-u_xlat16_1) + 1.0;
+                    u_xlat16_14.xyz = u_xlat0.xyz * vec3(u_xlat16_1);
+                    u_xlat0.x = dot(vs_TEXCOORD4.xyz, vs_TEXCOORD4.xyz);
+                    u_xlat0.x = inversesqrt(u_xlat0.x);
+                    u_xlat0.xyz = u_xlat0.xxx * vs_TEXCOORD4.xyz;
+                    u_xlat2.x = dot(vs_TEXCOORD1.xyz, vs_TEXCOORD1.xyz);
+                    u_xlat2.x = inversesqrt(u_xlat2.x);
+                    u_xlat15.xyz = u_xlat2.xxx * vs_TEXCOORD1.xyz;
+                    u_xlati3 = int(vs_SV_InstanceID0) + unity_BaseInstanceID;
+                    u_xlati3 = u_xlati3 * 7;
+                    u_xlatb16 = unity_ProbeVolumeParams.x==1.0;
+                    if(u_xlatb16){
+                        u_xlatb29 = unity_ProbeVolumeParams.y==1.0;
+                        u_xlat4.xyz = vs_TEXCOORD3.www * hlslcc_mtx4x4unity_ProbeVolumeWorldToObject[1].xyz;
+                        u_xlat4.xyz = hlslcc_mtx4x4unity_ProbeVolumeWorldToObject[0].xyz * vs_TEXCOORD2.www + u_xlat4.xyz;
+                        u_xlat4.xyz = hlslcc_mtx4x4unity_ProbeVolumeWorldToObject[2].xyz * vs_TEXCOORD4.www + u_xlat4.xyz;
+                        u_xlat4.xyz = u_xlat4.xyz + hlslcc_mtx4x4unity_ProbeVolumeWorldToObject[3].xyz;
+                        u_xlat18.x = vs_TEXCOORD2.w;
+                        u_xlat18.y = vs_TEXCOORD3.w;
+                        u_xlat18.z = vs_TEXCOORD4.w;
+                        u_xlat4.xyz = (bool(u_xlatb29)) ? u_xlat4.xyz : u_xlat18.xyz;
+                        u_xlat4.xyz = u_xlat4.xyz + (-unity_ProbeVolumeMin.xyz);
+                        u_xlat4.yzw = u_xlat4.xyz * unity_ProbeVolumeSizeInv.xyz;
+                        u_xlat29 = u_xlat4.y * 0.25 + 0.75;
+                        u_xlat42 = unity_ProbeVolumeParams.z * 0.5 + 0.75;
+                        u_xlat4.x = max(u_xlat42, u_xlat29);
+                        u_xlat4 = vec4(0.0);//texture(unity_ProbeVolumeSH, u_xlat4.xzw);
+                        u_xlat16_4 = u_xlat4;
+                    } else {
+                        u_xlat16_4 = unity_Builtins2Array[u_xlati3 / 7].unity_SHCArray.wwww;
+                    }
+                    u_xlat16_6.x = dot(u_xlat16_4, unity_OcclusionMaskSelector);
+                    u_xlat16_6.x = clamp(u_xlat16_6.x, 0.0, 1.0);
+                    u_xlat29 = texture(_OcclusionMap, vs_TEXCOORD0.xy).y;
+                    u_xlat16_19.x = (-_OcclusionStrength) + 1.0;
+                    u_xlat16_19.x = u_xlat29 * _OcclusionStrength + u_xlat16_19.x;
+                    u_xlat29 = (-_Glossiness) + 1.0;
+                    u_xlat16_32 = dot(u_xlat15.xyz, u_xlat0.xyz);
+                    u_xlat16_32 = u_xlat16_32 + u_xlat16_32;
+                    u_xlat16_7.xyz = u_xlat0.xyz * (-vec3(u_xlat16_32)) + u_xlat15.xyz;
+                    u_xlat16_6.xzw = u_xlat16_6.xxx * _LightColor0.xyz;
+                    if(u_xlatb16){
+                        u_xlatb16 = unity_ProbeVolumeParams.y==1.0;
+                        u_xlat5.xyz = vs_TEXCOORD3.www * hlslcc_mtx4x4unity_ProbeVolumeWorldToObject[1].xyz;
+                        u_xlat5.xyz = hlslcc_mtx4x4unity_ProbeVolumeWorldToObject[0].xyz * vs_TEXCOORD2.www + u_xlat5.xyz;
+                        u_xlat5.xyz = hlslcc_mtx4x4unity_ProbeVolumeWorldToObject[2].xyz * vs_TEXCOORD4.www + u_xlat5.xyz;
+                        u_xlat5.xyz = u_xlat5.xyz + hlslcc_mtx4x4unity_ProbeVolumeWorldToObject[3].xyz;
+                        u_xlat21.x = vs_TEXCOORD2.w;
+                        u_xlat21.y = vs_TEXCOORD3.w;
+                        u_xlat21.z = vs_TEXCOORD4.w;
+                        u_xlat5.xyz = (bool(u_xlatb16)) ? u_xlat5.xyz : u_xlat21.xyz;
+                        u_xlat5.xyz = u_xlat5.xyz + (-unity_ProbeVolumeMin.xyz);
+                        u_xlat4.yzw = u_xlat5.xyz * unity_ProbeVolumeSizeInv.xyz;
+                        u_xlat16 = u_xlat4.y * 0.25;
+                        u_xlat42 = unity_ProbeVolumeParams.z * 0.5;
+                        u_xlat5.x = (-unity_ProbeVolumeParams.z) * 0.5 + 0.25;
+                        u_xlat16 = max(u_xlat42, u_xlat16);
+                        u_xlat4.x = min(u_xlat5.x, u_xlat16);
+                        u_xlat5 = vec4(0.0);//texture(unity_ProbeVolumeSH, u_xlat4.xzw);
+                        u_xlat8.xyz = u_xlat4.xzw + vec3(0.25, 0.0, 0.0);
+                        u_xlat8 = vec4(0.0);//texture(unity_ProbeVolumeSH, u_xlat8.xyz);
+                        u_xlat9.xyz = u_xlat4.xzw + vec3(0.5, 0.0, 0.0);
+                        u_xlat4 = vec4(0.0);//texture(unity_ProbeVolumeSH, u_xlat9.xyz);
+                        u_xlat0.w = 1.0;
+                        u_xlat16_10.x = dot(u_xlat5, u_xlat0);
+                        u_xlat16_10.y = dot(u_xlat8, u_xlat0);
+                        u_xlat16_10.z = dot(u_xlat4, u_xlat0);
+                    } else {
+                        u_xlat0.w = 1.0;
+                        u_xlat16_10.x = dot(unity_Builtins2Array[u_xlati3 / 7].unity_SHArArray, u_xlat0);
+                        u_xlat16_10.y = dot(unity_Builtins2Array[u_xlati3 / 7].unity_SHAgArray, u_xlat0);
+                        u_xlat16_10.z = dot(unity_Builtins2Array[u_xlati3 / 7].unity_SHAbArray, u_xlat0);
+                    }
+                    u_xlat16_10.xyz = u_xlat16_10.xyz + vs_TEXCOORD5.xyz;
+                    u_xlat16_10.xyz = max(u_xlat16_10.xyz, vec3(0.0, 0.0, 0.0));
+                    u_xlat3.xyw = log2(u_xlat16_10.xyz);
+                    u_xlat3.xyw = u_xlat3.xyw * vec3(0.416666657, 0.416666657, 0.416666657);
+                    u_xlat3.xyw = exp2(u_xlat3.xyw);
+                    u_xlat3.xyw = u_xlat3.xyw * vec3(1.05499995, 1.05499995, 1.05499995) + vec3(-0.0549999997, -0.0549999997, -0.0549999997);
+                    u_xlat3.xyw = max(u_xlat3.xyw, vec3(0.0, 0.0, 0.0));
+                    u_xlatb39 = 0.0<unity_SpecCube0_ProbePosition.w;
+                    if(u_xlatb39){
+                        u_xlat39 = dot(u_xlat16_7.xyz, u_xlat16_7.xyz);
+                        u_xlat39 = inversesqrt(u_xlat39);
+                        u_xlat5.xyz = vec3(u_xlat39) * u_xlat16_7.xyz;
+                        u_xlat8.x = vs_TEXCOORD2.w;
+                        u_xlat8.y = vs_TEXCOORD3.w;
+                        u_xlat8.z = vs_TEXCOORD4.w;
+                        u_xlat9.xyz = (-u_xlat8.xyz) + unity_SpecCube0_BoxMax.xyz;
+                        u_xlat9.xyz = u_xlat9.xyz / u_xlat5.xyz;
+                        u_xlat11.xyz = (-u_xlat8.xyz) + unity_SpecCube0_BoxMin.xyz;
+                        u_xlat11.xyz = u_xlat11.xyz / u_xlat5.xyz;
+                        u_xlatb12.xyz = lessThan(vec4(0.0, 0.0, 0.0, 0.0), u_xlat5.xyzx).xyz;
+                        {
+                            vec3 hlslcc_movcTemp = u_xlat9;
+                            hlslcc_movcTemp.x = (u_xlatb12.x) ? u_xlat9.x : u_xlat11.x;
+                            hlslcc_movcTemp.y = (u_xlatb12.y) ? u_xlat9.y : u_xlat11.y;
+                            hlslcc_movcTemp.z = (u_xlatb12.z) ? u_xlat9.z : u_xlat11.z;
+                            u_xlat9 = hlslcc_movcTemp;
+                        }
+                        u_xlat39 = min(u_xlat9.y, u_xlat9.x);
+                        u_xlat39 = min(u_xlat9.z, u_xlat39);
+                        u_xlat8.xyz = u_xlat8.xyz + (-unity_SpecCube0_ProbePosition.xyz);
+                        u_xlat5.xyz = u_xlat5.xyz * vec3(u_xlat39) + u_xlat8.xyz;
+                    } else {
+                        u_xlat5.xyz = u_xlat16_7.xyz;
+                    }
+                    u_xlat16_46 = (-u_xlat29) * 0.699999988 + 1.70000005;
+                    u_xlat16_46 = u_xlat29 * u_xlat16_46;
+                    u_xlat16_46 = u_xlat16_46 * 6.0;
+                    u_xlat4 = vec4(0.0);//textureLod(unity_SpecCube0, u_xlat5.xyz, u_xlat16_46);
+                    u_xlat16_10.x = u_xlat4.w + -1.0;
+                    u_xlat16_10.x = unity_SpecCube0_HDR.w * u_xlat16_10.x + 1.0;
+                    u_xlat16_10.x = u_xlat16_10.x * unity_SpecCube0_HDR.x;
+                    u_xlat16_23.xyz = u_xlat4.xyz * u_xlat16_10.xxx;
+                    u_xlatb39 = unity_SpecCube0_BoxMin.w<0.999989986;
+                    if(u_xlatb39){
+                        u_xlatb39 = 0.0<unity_SpecCube1_ProbePosition.w;
+                        if(u_xlatb39){
+                            u_xlat39 = dot(u_xlat16_7.xyz, u_xlat16_7.xyz);
+                            u_xlat39 = inversesqrt(u_xlat39);
+                            u_xlat5.xyz = vec3(u_xlat39) * u_xlat16_7.xyz;
+                            u_xlat8.x = vs_TEXCOORD2.w;
+                            u_xlat8.y = vs_TEXCOORD3.w;
+                            u_xlat8.z = vs_TEXCOORD4.w;
+                            u_xlat9.xyz = (-u_xlat8.xyz) + unity_SpecCube1_BoxMax.xyz;
+                            u_xlat9.xyz = u_xlat9.xyz / u_xlat5.xyz;
+                            u_xlat11.xyz = (-u_xlat8.xyz) + unity_SpecCube1_BoxMin.xyz;
+                            u_xlat11.xyz = u_xlat11.xyz / u_xlat5.xyz;
+                            u_xlatb12.xyz = lessThan(vec4(0.0, 0.0, 0.0, 0.0), u_xlat5.xyzx).xyz;
+                            {
+                                vec3 hlslcc_movcTemp = u_xlat9;
+                                hlslcc_movcTemp.x = (u_xlatb12.x) ? u_xlat9.x : u_xlat11.x;
+                                hlslcc_movcTemp.y = (u_xlatb12.y) ? u_xlat9.y : u_xlat11.y;
+                                hlslcc_movcTemp.z = (u_xlatb12.z) ? u_xlat9.z : u_xlat11.z;
+                                u_xlat9 = hlslcc_movcTemp;
+                            }
+                            u_xlat39 = min(u_xlat9.y, u_xlat9.x);
+                            u_xlat39 = min(u_xlat9.z, u_xlat39);
+                            u_xlat8.xyz = u_xlat8.xyz + (-unity_SpecCube1_ProbePosition.xyz);
+                            u_xlat5.xyz = u_xlat5.xyz * vec3(u_xlat39) + u_xlat8.xyz;
+                        } else {
+                            u_xlat5.xyz = u_xlat16_7.xyz;
+                        }
+                        u_xlat5 = vec4(0.0);//textureLod(unity_SpecCube1, u_xlat5.xyz, u_xlat16_46);
+                        u_xlat16_7.x = u_xlat5.w + -1.0;
+                        u_xlat16_7.x = unity_SpecCube1_HDR.w * u_xlat16_7.x + 1.0;
+                        u_xlat16_7.x = u_xlat16_7.x * unity_SpecCube1_HDR.x;
+                        u_xlat16_7.xyz = u_xlat5.xyz * u_xlat16_7.xxx;
+                        u_xlat5.xyz = u_xlat16_10.xxx * u_xlat4.xyz + (-u_xlat16_7.xyz);
+                        u_xlat23.xyz = unity_SpecCube0_BoxMin.www * u_xlat5.xyz + u_xlat16_7.xyz;
+                        u_xlat16_23.xyz = u_xlat23.xyz;
+                    }
+                    u_xlat16_7.xyz = u_xlat16_19.xxx * u_xlat16_23.xyz;
+                    u_xlat5.xyz = (-vs_TEXCOORD1.xyz) * u_xlat2.xxx + _WorldSpaceLightPos0.xyz;
+                    u_xlat39 = dot(u_xlat5.xyz, u_xlat5.xyz);
+                    u_xlat39 = max(u_xlat39, 0.00100000005);
+                    u_xlat39 = inversesqrt(u_xlat39);
+                    u_xlat5.xyz = vec3(u_xlat39) * u_xlat5.xyz;
+                    u_xlat39 = dot(u_xlat0.xyz, (-u_xlat15.xyz));
+                    u_xlat2.x = dot(u_xlat0.xyz, _WorldSpaceLightPos0.xyz);
+                    u_xlat2.x = clamp(u_xlat2.x, 0.0, 1.0);
+                    u_xlat0.x = dot(u_xlat0.xyz, u_xlat5.xyz);
+                    u_xlat0.x = clamp(u_xlat0.x, 0.0, 1.0);
+                    u_xlat13 = dot(_WorldSpaceLightPos0.xyz, u_xlat5.xyz);
+                    u_xlat13 = clamp(u_xlat13, 0.0, 1.0);
+                    u_xlat16_46 = u_xlat13 + u_xlat13;
+                    u_xlat16_46 = u_xlat13 * u_xlat16_46;
+                    u_xlat16_46 = u_xlat16_46 * u_xlat29 + -0.5;
+                    u_xlat16_10.x = (-u_xlat2.x) + 1.0;
+                    u_xlat16_23.x = u_xlat16_10.x * u_xlat16_10.x;
+                    u_xlat16_23.x = u_xlat16_23.x * u_xlat16_23.x;
+                    u_xlat16_10.x = u_xlat16_10.x * u_xlat16_23.x;
+                    u_xlat16_10.x = u_xlat16_46 * u_xlat16_10.x + 1.0;
+                    u_xlat16_23.x = -abs(u_xlat39) + 1.0;
+                    u_xlat16_36 = u_xlat16_23.x * u_xlat16_23.x;
+                    u_xlat16_36 = u_xlat16_36 * u_xlat16_36;
+                    u_xlat16_23.x = u_xlat16_23.x * u_xlat16_36;
+                    u_xlat16_46 = u_xlat16_46 * u_xlat16_23.x + 1.0;
+                    u_xlat16_46 = u_xlat16_46 * u_xlat16_10.x;
+                    u_xlat26 = u_xlat2.x * u_xlat16_46;
+                    u_xlat15.x = u_xlat29 * u_xlat29;
+                    u_xlat15.x = max(u_xlat15.x, 0.00200000009);
+                    u_xlat28 = (-u_xlat15.x) + 1.0;
+                    u_xlat41 = abs(u_xlat39) * u_xlat28 + u_xlat15.x;
+                    u_xlat28 = u_xlat2.x * u_xlat28 + u_xlat15.x;
+                    u_xlat39 = abs(u_xlat39) * u_xlat28;
+                    u_xlat39 = u_xlat2.x * u_xlat41 + u_xlat39;
+                    u_xlat39 = u_xlat39 + 9.99999975e-06;
+                    u_xlat39 = 0.5 / u_xlat39;
+                    u_xlat28 = u_xlat15.x * u_xlat15.x;
+                    u_xlat41 = u_xlat0.x * u_xlat28 + (-u_xlat0.x);
+                    u_xlat0.x = u_xlat41 * u_xlat0.x + 1.0;
+                    u_xlat28 = u_xlat28 * 0.318309873;
+                    u_xlat0.x = u_xlat0.x * u_xlat0.x + 1.00000001e-07;
+                    u_xlat0.x = u_xlat28 / u_xlat0.x;
+                    u_xlat0.x = u_xlat0.x * u_xlat39;
+                    u_xlat0.x = u_xlat0.x * 3.14159274;
+                    u_xlat0.x = max(u_xlat0.x, 9.99999975e-05);
+                    u_xlat0.x = sqrt(u_xlat0.x);
+                    u_xlat0.x = u_xlat2.x * u_xlat0.x;
+                    u_xlat39 = u_xlat15.x * u_xlat29;
+                    u_xlat39 = (-u_xlat39) * 0.280000001 + 1.0;
+                    u_xlat16_46 = dot(_SpecColor.xyz, _SpecColor.xyz);
+                    u_xlatb2 = u_xlat16_46!=0.0;
+                    u_xlat2.x = u_xlatb2 ? 1.0 : float(0.0);
+                    u_xlat0.x = u_xlat0.x * u_xlat2.x;
+                    u_xlat16_1 = (-u_xlat16_1) + 1.0;
+                    u_xlat16_1 = u_xlat16_1 + _Glossiness;
+                    u_xlat16_1 = clamp(u_xlat16_1, 0.0, 1.0);
+                    u_xlat16_10.xzw = vec3(u_xlat26) * u_xlat16_6.xzw;
+                    u_xlat16_10.xzw = u_xlat3.xyw * u_xlat16_19.xxx + u_xlat16_10.xzw;
+                    u_xlat2.xyz = u_xlat16_6.xzw * u_xlat0.xxx;
+                    u_xlat16_6.x = (-u_xlat13) + 1.0;
+                    u_xlat16_19.x = u_xlat16_6.x * u_xlat16_6.x;
+                    u_xlat16_19.x = u_xlat16_19.x * u_xlat16_19.x;
+                    u_xlat16_6.x = u_xlat16_6.x * u_xlat16_19.x;
+                    u_xlat16_19.xyz = (-_SpecColor.xyz) + vec3(1.0, 1.0, 1.0);
+                    u_xlat16_6.xyz = u_xlat16_19.xyz * u_xlat16_6.xxx + _SpecColor.xyz;
+                    u_xlat0.xyz = u_xlat2.xyz * u_xlat16_6.xyz;
+                    u_xlat0.xyz = u_xlat16_14.xyz * u_xlat16_10.xzw + u_xlat0.xyz;
+                    u_xlat16_14.xyz = u_xlat16_7.xyz * vec3(u_xlat39);
+                    u_xlat16_6.xyz = vec3(u_xlat16_1) + (-_SpecColor.xyz);
+                    u_xlat16_6.xyz = u_xlat16_23.xxx * u_xlat16_6.xyz + _SpecColor.xyz;
+                    u_xlat0.xyz = u_xlat16_14.xyz * u_xlat16_6.xyz + u_xlat0.xyz;
+                    u_xlat39 = vs_TEXCOORD1.w * unity_FogParams.x;
+                    u_xlat39 = u_xlat39 * (-u_xlat39);
+                    u_xlat39 = exp2(u_xlat39);
+                    u_xlat0.xyz = u_xlat0.xyz + (-unity_FogColor.xyz);
+                    u_xlat0.xyz = vec3(u_xlat39) * u_xlat0.xyz + unity_FogColor.xyz;
+                    SV_Target0.xyz = u_xlat0.xyz;
+                    SV_Target0.w = 1.0;
+                    return;
+                }`);
+
+                const plane = createQuad(0.95, 0.9);
+                gl.clearColor(0, 0, 0.2, 1);
+                gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+                gl.useProgram(program);
+
+                const blockIndex0 = gl.getUniformBlockIndex(program, `UnityInstancing_PerDraw0`);
+                const blockIndex1 = gl.getUniformBlockIndex(program, `UnityInstancing_PerDraw2`);
+
+                gl.uniformBlockBinding(program, 0, 0);
+                gl.uniformBlockBinding(program, 1, 1);
+
+                const blockSize0 = gl.getActiveUniformBlockParameter(
+                    program,
+                    blockIndex0,
+                    gl.UNIFORM_BLOCK_DATA_SIZE);
+
+                const uboBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.UNIFORM_BUFFER, uboBuffer);
+                gl.bufferData(gl.UNIFORM_BUFFER, blockSize0, gl.DYNAMIC_DRAW);
+                gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+
+                gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, uboBuffer);
+                gl.bindBufferBase(gl.UNIFORM_BUFFER, 1, uboBuffer);
+
+                gl.uniformBlockBinding(program, blockIndex0, 0);
+                gl.uniformBlockBinding(program, blockIndex1, 1);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, plane);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        </script>
+    </body>
+</html>

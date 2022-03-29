@@ -1,91 +1,162 @@
 <html>
     <body>
-        <script type="module">
-            import { GLContext } from "./loki/gl/gl_context.js";
-            import { GLPlaneMesh } from "./loki/gl/shapes/gl_plane_mesh.js";
-            import { GLShader } from "./loki/gl/gl_shader.js";
-            import { GLTexture } from "./loki/gl/gl_texture.js";
-            import { GLFramebuffer } from "./loki/gl/gl_frame_buffer.js";
-            import { GLRenderbuffer } from "./loki/gl/gl_render_buffer.js";
+        <script>
+            const res = 800;
 
-            const width = 800;
-            const height = 600;
+            var canvas = document.createElement("canvas");
+            canvas.width = res;
+            canvas.height = res;
+            document.body.appendChild(canvas);
+            var gl = canvas.getContext("webgl2");
 
-            const gl = new GLContext({ width, height, preserveDrawingBuffer: false });
-            document.body.appendChild(gl.canvas);
+            function createTexture(res, format, bytes) {
+                let texture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                if (bytes)
+                    gl.texImage2D(gl.TEXTURE_2D, 0, format, res, res, 0, gl.RGBA, gl.UNSIGNED_BYTE, 
+                                  Uint8Array.from(bytes));
+                else
+                    gl.texStorage2D(gl.TEXTURE_2D, 1, format, res, res);
 
-            const plane = new GLPlaneMesh(gl, { width: 1.9, height: 1.9, z: 0.9 } );
-            const plane2 = new GLPlaneMesh(gl, { z: 0.5 });
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.bindTexture(gl.TEXTURE_2D, null);
+                return texture;
+            }
 
-            const texture = new GLTexture(gl, {w: 1, h: 1, data: [255,255,0,255]});
-            const texture2 = new GLTexture(gl, {w: 1, h: 1, data: [0,0,255,255]});
-            const shader = new GLShader(gl, 
+            function createProgram(vertexShaderSrc, fragmentShaderSrc) {
+                let vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                gl.shaderSource(vertexShader, vertexShaderSrc);
+                gl.compileShader(vertexShader);
+                let fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(fragmentShader, fragmentShaderSrc);
+                gl.compileShader(fragmentShader);
+
+                let program = gl.createProgram();
+                gl.attachShader(program, vertexShader);
+                gl.attachShader(program, fragmentShader);
+                gl.linkProgram(program);
+
+                gl.deleteShader(vertexShader);
+                gl.deleteShader(fragmentShader);
+
+                return program;
+            }
+
+            function createQuad(size, z) {
+                let points = Float32Array.from([ -size, -size, z, 
+                                                size, -size, z,
+                                                -size, size, z,
+                                                size, size, z]);
+                let buffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                gl.bufferData(gl.ARRAY_BUFFER, points, gl.STATIC_DRAW);
+                return buffer
+            }
+
+            function createRenderBuffer(res, format, samples) {
+                let rb = gl.createRenderbuffer();
+                gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+                if (samples > 1)
+                    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, format, res, res);
+                else
+                    gl.renderbufferStorage(gl.RENDERBUFFER, format, res, res);
+                return rb;
+            }
+
+            const plane = createQuad(0.95, 0.9);
+            const plane2 = createQuad(0.8, 0.5);
+            const fullscreenQuad = createQuad(1.0, 0.0);
+
+            var yellowTex = createTexture(1, gl.RGBA8, [255, 255, 0, 255]);
+            var blueTex = createTexture(1, gl.RGBA8, [0, 0, 255, 255]);
+
+            const program = createProgram(
                 `#version 300 es
                 in vec3 a_P;
-                in vec2 a_uv;
-                out vec2 textureCoord;
-                uniform float y;
-                void main(void) {
-                    gl_Position = vec4(a_P.x, a_P.y + y, a_P.z, 1.0);
-                    textureCoord = a_uv;
+                out vec2 a_UV;
+                void main() {
+                    gl_Position = vec4(a_P, 1.0);
+                    a_UV = (a_P.xy + 1.0) * 0.5;
                 }`,
                 `#version 300 es
                 precision highp float;
                 uniform sampler2D baseColor;
-                in vec2 textureCoord;
+                in vec2 a_UV;
                 out vec4 FragColor;
-                void main(void) {
-                    FragColor = texture(baseColor, textureCoord);
+                void main() {
+                    FragColor = texture(baseColor, a_UV);
                 }`);
 
-            // Rendering to an MSAA depth texture ...
+            // The WebKit error occurs if...
+
+            // 1) You use renderbufferStorageMultisample.
             const msaaSamples = 4;
-            const colorRenderbuffer = new GLRenderbuffer(gl, width, height, gl.RGBA8, msaaSamples);
-            const depthRenderbuffer = new GLRenderbuffer(gl, width, height, gl.DEPTH_COMPONENT16, msaaSamples);
-            const resolveTexture = new GLTexture(gl, { width, height, format: gl.RGBA });
+            const colorRB = createRenderBuffer(res, gl.RGBA8, msaaSamples);
+            const depthRB = createRenderBuffer(res, gl.DEPTH_COMPONENT16, msaaSamples);
+            const resolveTex = createTexture(res, gl.RGBA8);
 
-            const renderFramebuffer = new GLFramebuffer(gl, colorRenderbuffer, depthRenderbuffer);
-            const resolveFramebuffer = new GLFramebuffer(gl, resolveTexture);
+            let renderFBO = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, renderFBO);
+            gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, colorRB);
+            gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRB);
 
-            let y = 0;
-            gl.onDrawFrame.addListener(function() {
-                renderFramebuffer.bind();
+            let resolveFBO = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, resolveFBO);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, resolveTex, 0);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+            gl.disable(gl.CULL_FACE);
+            gl.disable(gl.BLEND);
+
+            let a_P = gl.getAttribLocation(program, "a_P");
+            gl.enableVertexAttribArray(a_P);
+
+            var count = 0;
+            function runTest() {
+                // 2) Render from requestAnimationFrame, only starting with the 2nd frame.
+                if (count++ < 1)
+                    requestAnimationFrame(runTest);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, renderFBO);
+                gl.clearColor(0, 0, 0.2, 1);
                 gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
 
-                gl.disable(gl.DEPTH_TEST); // ... and disabling DEPTH_TEST ...
+                // 3) You disable gl.DEPTH_TEST
+                gl.disable(gl.DEPTH_TEST);
                 gl.depthMask(false);
-                texture.bind();
-                shader.setUniform('y', 0.0);
-                shader.drawMesh(plane);
+                gl.useProgram(program);
 
-                gl.enable(gl.DEPTH_TEST); // ... triggers the bad depth buffer for this draw
+                gl.bindTexture(gl.TEXTURE_2D, yellowTex);
+                gl.bindBuffer(gl.ARRAY_BUFFER, plane);
+                gl.vertexAttribPointer(a_P, 3, gl.FLOAT, false, 0, 0);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                // 4) And re-enable gl.DEPTH_TEST
+                gl.enable(gl.DEPTH_TEST);
                 gl.depthMask(true);
-                texture2.bind();
-                shader.setUniform('y', y);
-                shader.drawMesh(plane2);
+                gl.bindTexture(gl.TEXTURE_2D, blueTex);
+                gl.bindBuffer(gl.ARRAY_BUFFER, plane2);
+                gl.vertexAttribPointer(a_P, 3, gl.FLOAT, false, 0, 0);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-                renderFramebuffer.unbind();
-
-                gl.bindFramebuffer(gl.READ_FRAMEBUFFER, renderFramebuffer.handle);
-                gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, resolveFramebuffer.handle);
-
+                gl.bindFramebuffer(gl.READ_FRAMEBUFFER, renderFBO);
+                gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, resolveFBO);
                 gl.clearBufferfv(gl.COLOR, 0, [0.0, 0.0, 0.0, 0.0]);
-                gl.blitFramebuffer(0, 0, width, height,
-                                0, 0, width, height,
+                gl.blitFramebuffer(0, 0, res, res,
+                                0, 0, res, res,
                                 gl.COLOR_BUFFER_BIT, gl.LINEAR);
-
                 gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
                 gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
 
-                resolveTexture.bind();
-                shader.setUniform('y', 0);
-                shader.drawMesh(plane);
+                gl.bindTexture(gl.TEXTURE_2D, resolveTex);
+                gl.bindBuffer(gl.ARRAY_BUFFER, fullscreenQuad);
+                gl.vertexAttribPointer(a_P, 3, gl.FLOAT, false, 0, 0);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            }
 
-                y += 0.01;
-                if (y > 1.0)
-                    y = -0.5;
-            });
-            gl.animate();
+            requestAnimationFrame(runTest);
         </script>
     </body>
 </html>
