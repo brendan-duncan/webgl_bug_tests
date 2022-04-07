@@ -3,11 +3,15 @@
         <script>
             const res = 800;
 
-            var canvas = document.createElement("canvas");
+            let canvas = document.createElement("canvas");
             canvas.width = res;
             canvas.height = res;
             document.body.appendChild(canvas);
-            var gl = canvas.getContext("webgl2");
+            let gl = canvas.getContext("webgl2");
+
+            let fps = document.createElement("div");
+            fps.style = "position: absolute; top: 0px; left: 0px; width: 200px; height: 32px; color:#fff; background-color:#000;";
+            document.body.appendChild(fps);
 
             function createTexture(res, format, bytes) {
                 let texture = gl.createTexture();
@@ -489,7 +493,6 @@
 
                 const plane = createQuad(0.95, 0.9);
                 gl.clearColor(0, 0, 0.2, 1);
-                gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
 
                 gl.useProgram(program);
 
@@ -515,8 +518,18 @@
                 gl.uniformBlockBinding(program, blockIndex0, 0);
                 gl.uniformBlockBinding(program, blockIndex1, 1);
 
-                gl.bindBuffer(gl.ARRAY_BUFFER, plane);
-                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                let t0 = performance.now();
+
+                function test() {
+                    gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+                    let t1 = performance.now();
+                    fps.innerText = `${Math.trunc(t1 - t0)}ms`;
+                    t0 = t1;
+                    gl.bindBuffer(gl.ARRAY_BUFFER, plane);
+                    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, 20);
+                    requestAnimationFrame(test);
+                }
+                requestAnimationFrame(test);
         </script>
     </body>
 </html>

@@ -1,6 +1,11 @@
 # webgl_bug_tests
 Various tests for WebGL bugs.
 
+## metal_max_uniforms.html
+Garrett Johnson's ThreeJS path tracer, https://github.com/gkjohnson/three-gpu-pathtracer, fails on MacOS/iOS with the Angle Metal backend, with the error that the shader exceeds the max number of uniforms. This is a minimal test
+that attempts to compile the failing shader.
+[msaa_depth_buffer.html](https://brendan-duncan.github.io/webgl_bug_tests/metal_max_uniforms.html)
+
 ## msaa_depth_buffer.html
 MacOS Safari renders incorrectly if the depth buffer has MSAA multiple samples, and you draw with DEPTH_TEST disabled.
 [msaa_depth_buffer.html](https://brendan-duncan.github.io/webgl_bug_tests/msaa_depth_buffer.html)

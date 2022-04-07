@@ -1,0 +1,1536 @@
+<html>
+    <body>
+        <script>
+            const res = 64;
+
+			let log = document.createElement("div");
+			document.body.appendChild(log);
+
+            let canvas = document.createElement("canvas");
+            canvas.width = res;
+            canvas.height = res;
+            document.body.appendChild(canvas);
+            let gl = canvas.getContext("webgl2");
+
+            function createProgram(vertexShaderSrc, fragmentShaderSrc) {
+                let vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                gl.shaderSource(vertexShader, vertexShaderSrc);
+                gl.compileShader(vertexShader);
+                let fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(fragmentShader, fragmentShaderSrc);
+                gl.compileShader(fragmentShader);
+                
+                let program = gl.createProgram();
+                gl.attachShader(program, vertexShader);
+                gl.attachShader(program, fragmentShader);
+                
+                gl.linkProgram(program);
+
+				const vsLog = gl.getShaderInfoLog(vertexShader);
+				if (vsLog)
+					log.innerHTML += "<b>Vertex Shader</b>:" + vsLog + "<br>";
+				const fsLog = gl.getShaderInfoLog(fragmentShader);
+				if (fsLog)
+					log.innerHTML += "<b>Fragment Shader</b>:" + fsLog + "<br>";
+				const programLog = gl.getProgramInfoLog(program);
+				if (programLog)
+					log.innerHTML += "<b>Program</b>:" + programLog + "<br>";
+
+                gl.deleteShader(vertexShader);
+                gl.deleteShader(fragmentShader);
+
+                return program;
+            }
+
+            const program = createProgram(
+                `#version 300 es
+precision mediump sampler2DArray;
+#define attribute in
+#define varying out
+#define texture2D texture
+precision highp float;
+precision highp int;
+#define HIGH_PRECISION
+#define SHADER_NAME ShaderMaterial
+#define BOUNCES 3
+#define TRANSPARENT_TRAVERSALS 5
+#define MATERIAL_LENGTH 47
+#define GRADIENT_BG 1
+#define VERTEX_TEXTURES
+#define MAX_BONES 0
+#define USE_ENVMAP
+#define ENVMAP_MODE_REFLECTION
+#define BONE_TEXTURE
+uniform mat4 modelMatrix;
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+uniform mat4 viewMatrix;
+uniform mat3 normalMatrix;
+uniform vec3 cameraPosition;
+uniform bool isOrthographic;
+#ifdef USE_INSTANCING
+	attribute mat4 instanceMatrix;
+#endif
+#ifdef USE_INSTANCING_COLOR
+	attribute vec3 instanceColor;
+#endif
+attribute vec3 position;
+attribute vec3 normal;
+attribute vec2 uv;
+#ifdef USE_TANGENT
+	attribute vec4 tangent;
+#endif
+#if defined( USE_COLOR_ALPHA )
+	attribute vec4 color;
+#elif defined( USE_COLOR )
+	attribute vec3 color;
+#endif
+#if ( defined( USE_MORPHTARGETS ) && ! defined( MORPHTARGETS_TEXTURE ) )
+	attribute vec3 morphTarget0;
+	attribute vec3 morphTarget1;
+	attribute vec3 morphTarget2;
+	attribute vec3 morphTarget3;
+	#ifdef USE_MORPHNORMALS
+		attribute vec3 morphNormal0;
+		attribute vec3 morphNormal1;
+		attribute vec3 morphNormal2;
+		attribute vec3 morphNormal3;
+	#else
+		attribute vec3 morphTarget4;
+		attribute vec3 morphTarget5;
+		attribute vec3 morphTarget6;
+		attribute vec3 morphTarget7;
+	#endif
+#endif
+#ifdef USE_SKINNING
+	attribute vec4 skinIndex;
+	attribute vec4 skinWeight;
+#endif
+
+
+
+				varying vec2 vUv;
+				void main() {
+
+					vec4 mvPosition = vec4( position, 1.0 );
+					mvPosition = modelViewMatrix * mvPosition;
+					gl_Position = projectionMatrix * mvPosition;
+
+					vUv = uv;
+
+				}`,
+
+                `#version 300 es
+#define varying in
+layout(location = 0) out highp vec4 pc_fragColor;
+#define gl_FragColor pc_fragColor
+#define gl_FragDepthEXT gl_FragDepth
+#define texture2D texture
+#define textureCube texture
+#define texture2DProj textureProj
+#define texture2DLodEXT textureLod
+#define texture2DProjLodEXT textureProjLod
+#define textureCubeLodEXT textureLod
+#define texture2DGradEXT textureGrad
+#define texture2DProjGradEXT textureProjGrad
+#define textureCubeGradEXT textureGrad
+precision highp float;
+precision highp int;
+#define HIGH_PRECISION
+#define SHADER_NAME ShaderMaterial
+#define BOUNCES 3
+#define TRANSPARENT_TRAVERSALS 5
+#define MATERIAL_LENGTH 47
+#define GRADIENT_BG 1
+#define USE_ENVMAP
+#define ENVMAP_TYPE_CUBE_UV
+#define ENVMAP_MODE_REFLECTION
+#define ENVMAP_BLENDING_NONE
+#define CUBEUV_TEXEL_WIDTH 0.0013020833333333333
+#define CUBEUV_TEXEL_HEIGHT 0.0010080645161290322
+#define CUBEUV_MAX_MIP 8.0
+#define PHYSICALLY_CORRECT_LIGHTS
+uniform mat4 viewMatrix;
+uniform vec3 cameraPosition;
+uniform bool isOrthographic;
+#define TONE_MAPPING
+#ifndef saturate
+#define saturate( a ) clamp( a, 0.0, 1.0 )
+#endif
+uniform float toneMappingExposure;
+vec3 LinearToneMapping( vec3 color ) {
+	return toneMappingExposure * color;
+}
+vec3 ReinhardToneMapping( vec3 color ) {
+	color *= toneMappingExposure;
+	return saturate( color / ( vec3( 1.0 ) + color ) );
+}
+vec3 OptimizedCineonToneMapping( vec3 color ) {
+	color *= toneMappingExposure;
+	color = max( vec3( 0.0 ), color - 0.004 );
+	return pow( ( color * ( 6.2 * color + 0.5 ) ) / ( color * ( 6.2 * color + 1.7 ) + 0.06 ), vec3( 2.2 ) );
+}
+vec3 RRTAndODTFit( vec3 v ) {
+	vec3 a = v * ( v + 0.0245786 ) - 0.000090537;
+	vec3 b = v * ( 0.983729 * v + 0.4329510 ) + 0.238081;
+	return a / b;
+}
+vec3 ACESFilmicToneMapping( vec3 color ) {
+	const mat3 ACESInputMat = mat3(
+		vec3( 0.59719, 0.07600, 0.02840 ),		vec3( 0.35458, 0.90834, 0.13383 ),
+		vec3( 0.04823, 0.01566, 0.83777 )
+	);
+	const mat3 ACESOutputMat = mat3(
+		vec3(  1.60475, -0.10208, -0.00327 ),		vec3( -0.53108,  1.10813, -0.07276 ),
+		vec3( -0.07367, -0.00605,  1.07602 )
+	);
+	color *= toneMappingExposure / 0.6;
+	color = ACESInputMat * color;
+	color = RRTAndODTFit( color );
+	color = ACESOutputMat * color;
+	return saturate( color );
+}
+vec3 CustomToneMapping( vec3 color ) { return color; }
+vec3 toneMapping( vec3 color ) { return ACESFilmicToneMapping( color ); }
+vec4 LinearToLinear( in vec4 value ) {
+	return value;
+}
+vec4 LinearTosRGB( in vec4 value ) {
+	return vec4( mix( pow( value.rgb, vec3( 0.41666 ) ) * 1.055 - vec3( 0.055 ), value.rgb * 12.92, vec3( lessThanEqual( value.rgb, vec3( 0.0031308 ) ) ) ), value.a );
+}
+vec4 linearToOutputTexel( vec4 value ) { return LinearToLinear( value ); }
+
+
+				#define RAY_OFFSET 1e-5
+
+				precision highp isampler2D;
+				precision highp usampler2D;
+				precision highp sampler2DArray;
+				vec4 envMapTexelToLinear( vec4 a ) { return a; }
+#define PI 3.141592653589793
+#define PI2 6.283185307179586
+#define PI_HALF 1.5707963267948966
+#define RECIPROCAL_PI 0.3183098861837907
+#define RECIPROCAL_PI2 0.15915494309189535
+#define EPSILON 1e-6
+#ifndef saturate
+#define saturate( a ) clamp( a, 0.0, 1.0 )
+#endif
+#define whiteComplement( a ) ( 1.0 - saturate( a ) )
+float pow2( const in float x ) { return x*x; }
+float pow3( const in float x ) { return x*x*x; }
+float pow4( const in float x ) { float x2 = x*x; return x2*x2; }
+float max3( const in vec3 v ) { return max( max( v.x, v.y ), v.z ); }
+float average( const in vec3 color ) { return dot( color, vec3( 0.3333 ) ); }
+highp float rand( const in vec2 uv ) {
+	const highp float a = 12.9898, b = 78.233, c = 43758.5453;
+	highp float dt = dot( uv.xy, vec2( a,b ) ), sn = mod( dt, PI );
+	return fract( sin( sn ) * c );
+}
+#ifdef HIGH_PRECISION
+	float precisionSafeLength( vec3 v ) { return length( v ); }
+#else
+	float precisionSafeLength( vec3 v ) {
+		float maxComponent = max3( abs( v ) );
+		return length( v / maxComponent ) * maxComponent;
+	}
+#endif
+struct IncidentLight {
+	vec3 color;
+	vec3 direction;
+	bool visible;
+};
+struct ReflectedLight {
+	vec3 directDiffuse;
+	vec3 directSpecular;
+	vec3 indirectDiffuse;
+	vec3 indirectSpecular;
+};
+struct GeometricContext {
+	vec3 position;
+	vec3 normal;
+	vec3 viewDir;
+#ifdef USE_CLEARCOAT
+	vec3 clearcoatNormal;
+#endif
+};
+vec3 transformDirection( in vec3 dir, in mat4 matrix ) {
+	return normalize( ( matrix * vec4( dir, 0.0 ) ).xyz );
+}
+vec3 inverseTransformDirection( in vec3 dir, in mat4 matrix ) {
+	return normalize( ( vec4( dir, 0.0 ) * matrix ).xyz );
+}
+mat3 transposeMat3( const in mat3 m ) {
+	mat3 tmp;
+	tmp[ 0 ] = vec3( m[ 0 ].x, m[ 1 ].x, m[ 2 ].x );
+	tmp[ 1 ] = vec3( m[ 0 ].y, m[ 1 ].y, m[ 2 ].y );
+	tmp[ 2 ] = vec3( m[ 0 ].z, m[ 1 ].z, m[ 2 ].z );
+	return tmp;
+}
+float linearToRelativeLuminance( const in vec3 color ) {
+	vec3 weights = vec3( 0.2126, 0.7152, 0.0722 );
+	return dot( weights, color.rgb );
+}
+bool isPerspectiveMatrix( mat4 m ) {
+	return m[ 2 ][ 3 ] == - 1.0;
+}
+vec2 equirectUv( in vec3 dir ) {
+	float u = atan( dir.z, dir.x ) * RECIPROCAL_PI2 + 0.5;
+	float v = asin( clamp( dir.y, - 1.0, 1.0 ) ) * RECIPROCAL_PI + 0.5;
+	return vec2( u, v );
+}
+#ifdef ENVMAP_TYPE_CUBE_UV
+	#define cubeUV_minMipLevel 4.0
+	#define cubeUV_minTileSize 16.0
+	float getFace( vec3 direction ) {
+		vec3 absDirection = abs( direction );
+		float face = - 1.0;
+		if ( absDirection.x > absDirection.z ) {
+			if ( absDirection.x > absDirection.y )
+				face = direction.x > 0.0 ? 0.0 : 3.0;
+			else
+				face = direction.y > 0.0 ? 1.0 : 4.0;
+		} else {
+			if ( absDirection.z > absDirection.y )
+				face = direction.z > 0.0 ? 2.0 : 5.0;
+			else
+				face = direction.y > 0.0 ? 1.0 : 4.0;
+		}
+		return face;
+	}
+	vec2 getUV( vec3 direction, float face ) {
+		vec2 uv;
+		if ( face == 0.0 ) {
+			uv = vec2( direction.z, direction.y ) / abs( direction.x );
+		} else if ( face == 1.0 ) {
+			uv = vec2( - direction.x, - direction.z ) / abs( direction.y );
+		} else if ( face == 2.0 ) {
+			uv = vec2( - direction.x, direction.y ) / abs( direction.z );
+		} else if ( face == 3.0 ) {
+			uv = vec2( - direction.z, direction.y ) / abs( direction.x );
+		} else if ( face == 4.0 ) {
+			uv = vec2( - direction.x, direction.z ) / abs( direction.y );
+		} else {
+			uv = vec2( direction.x, direction.y ) / abs( direction.z );
+		}
+		return 0.5 * ( uv + 1.0 );
+	}
+	vec3 bilinearCubeUV( sampler2D envMap, vec3 direction, float mipInt ) {
+		float face = getFace( direction );
+		float filterInt = max( cubeUV_minMipLevel - mipInt, 0.0 );
+		mipInt = max( mipInt, cubeUV_minMipLevel );
+		float faceSize = exp2( mipInt );
+		vec2 uv = getUV( direction, face ) * ( faceSize - 1.0 ) + 0.5;
+		if ( face > 2.0 ) {
+			uv.y += faceSize;
+			face -= 3.0;
+		}
+		uv.x += face * faceSize;
+		uv.x += filterInt * 3.0 * cubeUV_minTileSize;
+		uv.y += 4.0 * ( exp2( CUBEUV_MAX_MIP ) - faceSize );
+		uv.x *= CUBEUV_TEXEL_WIDTH;
+		uv.y *= CUBEUV_TEXEL_HEIGHT;
+		#ifdef texture2DGradEXT
+			return texture2DGradEXT( envMap, uv, vec2( 0.0 ), vec2( 0.0 ) ).rgb;
+		#else
+			return texture2D( envMap, uv ).rgb;
+		#endif
+	}
+	#define r0 1.0
+	#define v0 0.339
+	#define m0 - 2.0
+	#define r1 0.8
+	#define v1 0.276
+	#define m1 - 1.0
+	#define r4 0.4
+	#define v4 0.046
+	#define m4 2.0
+	#define r5 0.305
+	#define v5 0.016
+	#define m5 3.0
+	#define r6 0.21
+	#define v6 0.0038
+	#define m6 4.0
+	float roughnessToMip( float roughness ) {
+		float mip = 0.0;
+		if ( roughness >= r1 ) {
+			mip = ( r0 - roughness ) * ( m1 - m0 ) / ( r0 - r1 ) + m0;
+		} else if ( roughness >= r4 ) {
+			mip = ( r1 - roughness ) * ( m4 - m1 ) / ( r1 - r4 ) + m1;
+		} else if ( roughness >= r5 ) {
+			mip = ( r4 - roughness ) * ( m5 - m4 ) / ( r4 - r5 ) + m4;
+		} else if ( roughness >= r6 ) {
+			mip = ( r5 - roughness ) * ( m6 - m5 ) / ( r5 - r6 ) + m5;
+		} else {
+			mip = - 2.0 * log2( 1.16 * roughness );		}
+		return mip;
+	}
+	vec4 textureCubeUV( sampler2D envMap, vec3 sampleDir, float roughness ) {
+		float mip = clamp( roughnessToMip( roughness ), m0, CUBEUV_MAX_MIP );
+		float mipF = fract( mip );
+		float mipInt = floor( mip );
+		vec3 color0 = bilinearCubeUV( envMap, sampleDir, mipInt );
+		if ( mipF == 0.0 ) {
+			return vec4( color0, 1.0 );
+		} else {
+			vec3 color1 = bilinearCubeUV( envMap, sampleDir, mipInt + 1.0 );
+			return vec4( mix( color0, color1, mipF ), 1.0 );
+		}
+	}
+#endif
+
+				
+#ifndef TRI_INTERSECT_EPSILON
+#define TRI_INTERSECT_EPSILON 1e-5
+#endif
+
+#ifndef INFINITY
+#define INFINITY 1e20
+#endif
+
+struct BVH {
+
+	usampler2D index;
+	sampler2D position;
+
+	sampler2D bvhBounds;
+	usampler2D bvhContents;
+
+};
+
+// Note that a struct cannot be used for the hit record including faceIndices, faceNormal, barycoord,
+// side, and dist because on some mobile GPUS (such as Adreno) numbers are afforded less precision specifically
+// when in a struct leading to inaccurate hit results. See KhronosGroup/WebGL#3351 for more details.
+
+				
+
+uvec4 uTexelFetch1D( usampler2D tex, uint index ) {
+
+	uint width = uint( textureSize( tex, 0 ).x );
+	uvec2 uv;
+	uv.x = index % width;
+	uv.y = index / width;
+
+	return texelFetch( tex, ivec2( uv ), 0 );
+
+}
+
+ivec4 iTexelFetch1D( isampler2D tex, uint index ) {
+
+	uint width = uint( textureSize( tex, 0 ).x );
+	uvec2 uv;
+	uv.x = index % width;
+	uv.y = index / width;
+
+	return texelFetch( tex, ivec2( uv ), 0 );
+
+}
+
+vec4 texelFetch1D( sampler2D tex, uint index ) {
+
+	uint width = uint( textureSize( tex, 0 ).x );
+	uvec2 uv;
+	uv.x = index % width;
+	uv.y = index / width;
+
+	return texelFetch( tex, ivec2( uv ), 0 );
+
+}
+
+vec4 textureSampleBarycoord( sampler2D tex, vec3 barycoord, uvec3 faceIndices ) {
+
+	return
+		barycoord.x * texelFetch1D( tex, faceIndices.x ) +
+		barycoord.y * texelFetch1D( tex, faceIndices.y ) +
+		barycoord.z * texelFetch1D( tex, faceIndices.z );
+
+}
+
+void ndcToCameraRay(
+	vec2 coord, mat4 cameraWorld, mat4 invProjectionMatrix,
+	out vec3 rayOrigin, out vec3 rayDirection
+) {
+
+	// get camera look direction and near plane for camera clipping
+	vec4 lookDirection = cameraWorld * vec4( 0.0, 0.0, - 1.0, 0.0 );
+	vec4 nearVector = invProjectionMatrix * vec4( 0.0, 0.0, - 1.0, 1.0 );
+	float near = abs( nearVector.z / nearVector.w );
+
+	// get the camera direction and position from camera matrices
+	vec4 origin = cameraWorld * vec4( 0.0, 0.0, 0.0, 1.0 );
+	vec4 direction = invProjectionMatrix * vec4( coord, 0.5, 1.0 );
+	direction /= direction.w;
+	direction = cameraWorld * direction - origin;
+
+	// slide the origin along the ray until it sits at the near clip plane position
+	origin.xyz += direction.xyz * near / dot( direction, lookDirection );
+
+	rayOrigin = origin.xyz;
+	rayDirection = direction.xyz;
+
+}
+
+float intersectsBounds( vec3 rayOrigin, vec3 rayDirection, vec3 boundsMin, vec3 boundsMax ) {
+
+	// https://www.reddit.com/r/opengl/comments/8ntzz5/fast_glsl_ray_box_intersection/
+	// https://tavianator.com/2011/ray_box.html
+	vec3 invDir = 1.0 / rayDirection;
+
+	// find intersection distances for each plane
+	vec3 tMinPlane = invDir * ( boundsMin - rayOrigin );
+	vec3 tMaxPlane = invDir * ( boundsMax - rayOrigin );
+
+	// get the min and max distances from each intersection
+	vec3 tMinHit = min( tMaxPlane, tMinPlane );
+	vec3 tMaxHit = max( tMaxPlane, tMinPlane );
+
+	// get the furthest hit distance
+	vec2 t = max( tMinHit.xx, tMinHit.yz );
+	float t0 = max( t.x, t.y );
+
+	// get the minimum hit distance
+	t = min( tMaxHit.xx, tMaxHit.yz );
+	float t1 = min( t.x, t.y );
+
+	// set distance to 0.0 if the ray starts inside the box
+	float dist = max( t0, 0.0 );
+
+	return t1 >= dist ? dist : INFINITY;
+
+}
+
+bool intersectsTriangle(
+	vec3 rayOrigin, vec3 rayDirection, vec3 a, vec3 b, vec3 c,
+	out vec3 barycoord, out vec3 norm, out float dist, out float side
+) {
+
+	// https://stackoverflow.com/questions/42740765/intersection-between-line-and-triangle-in-3d
+	vec3 edge1 = b - a;
+	vec3 edge2 = c - a;
+	norm = cross( edge1, edge2 );
+
+	float det = - dot( rayDirection, norm );
+	float invdet = 1.0 / det;
+
+	vec3 AO = rayOrigin - a;
+	vec3 DAO = cross( AO, rayDirection );
+
+	vec4 uvt;
+	uvt.x = dot( edge2, DAO ) * invdet;
+	uvt.y = - dot( edge1, DAO ) * invdet;
+	uvt.z = dot( AO, norm ) * invdet;
+	uvt.w = 1.0 - uvt.x - uvt.y;
+
+	// set the hit information
+	barycoord = uvt.wxy; // arranged in A, B, C order
+	dist = uvt.z;
+	side = sign( det );
+	norm = side * normalize( norm );
+
+	// add an epsilon to avoid misses between triangles
+	uvt += vec4( TRI_INTERSECT_EPSILON );
+
+	return all( greaterThanEqual( uvt, vec4( 0.0 ) ) );
+
+}
+
+bool intersectTriangles(
+	BVH bvh, vec3 rayOrigin, vec3 rayDirection, uint offset, uint count,
+	inout float minDistance,
+
+	// output variables
+	out uvec4 faceIndices, out vec3 faceNormal, out vec3 barycoord,
+	out float side, out float dist
+) {
+
+	bool found = false;
+	vec3 localBarycoord, localNormal;
+	float localDist, localSide;
+	for ( uint i = offset, l = offset + count; i < l; i ++ ) {
+
+		uvec3 indices = uTexelFetch1D( bvh.index, i ).xyz;
+		vec3 a = texelFetch1D( bvh.position, indices.x ).rgb;
+		vec3 b = texelFetch1D( bvh.position, indices.y ).rgb;
+		vec3 c = texelFetch1D( bvh.position, indices.z ).rgb;
+
+		if (
+			intersectsTriangle( rayOrigin, rayDirection, a, b, c, localBarycoord, localNormal, localDist, localSide )
+			&& localDist < minDistance
+		) {
+
+			found = true;
+			minDistance = localDist;
+
+			faceIndices = uvec4( indices.xyz, i );
+			faceNormal = localNormal;
+
+			side = localSide;
+			barycoord = localBarycoord;
+			dist = localDist;
+
+		}
+
+	}
+
+	return found;
+
+}
+
+float intersectsBVHNodeBounds( vec3 rayOrigin, vec3 rayDirection, BVH bvh, uint currNodeIndex ) {
+
+	vec3 boundsMin = texelFetch1D( bvh.bvhBounds, currNodeIndex * 2u + 0u ).xyz;
+	vec3 boundsMax = texelFetch1D( bvh.bvhBounds, currNodeIndex * 2u + 1u ).xyz;
+	return intersectsBounds( rayOrigin, rayDirection, boundsMin, boundsMax );
+
+}
+
+bool bvhIntersectFirstHit(
+	BVH bvh, vec3 rayOrigin, vec3 rayDirection,
+
+	// output variables
+	out uvec4 faceIndices, out vec3 faceNormal, out vec3 barycoord,
+	out float side, out float dist
+) {
+
+	// stack needs to be twice as long as the deepest tree we expect because
+	// we push both the left and right child onto the stack every traversal
+	int ptr = 0;
+	uint stack[ 60 ];
+	stack[ 0 ] = 0u;
+
+	float triangleDistance = 1e20;
+	bool found = false;
+	while ( ptr > - 1 && ptr < 60 ) {
+
+		uint currNodeIndex = stack[ ptr ];
+		ptr --;
+
+		// check if we intersect the current bounds
+		float boundsHitDistance = intersectsBVHNodeBounds( rayOrigin, rayDirection, bvh, currNodeIndex );
+		if ( boundsHitDistance == INFINITY || boundsHitDistance > triangleDistance ) {
+
+			continue;
+
+		}
+
+		uvec2 boundsInfo = uTexelFetch1D( bvh.bvhContents, currNodeIndex ).xy;
+		bool isLeaf = bool( boundsInfo.x & 0xffff0000u );
+
+		if ( isLeaf ) {
+
+			uint count = boundsInfo.x & 0x0000ffffu;
+			uint offset = boundsInfo.y;
+
+			found = intersectTriangles(
+				bvh, rayOrigin, rayDirection, offset, count, triangleDistance,
+				faceIndices, faceNormal, barycoord, side, dist
+			) || found;
+
+		} else {
+
+			uint leftIndex = currNodeIndex + 1u;
+			uint splitAxis = boundsInfo.x & 0x0000ffffu;
+			uint rightIndex = boundsInfo.y;
+
+			bool leftToRight = rayDirection[ splitAxis ] >= 0.0;
+			uint c1 = leftToRight ? leftIndex : rightIndex;
+			uint c2 = leftToRight ? rightIndex : leftIndex;
+
+			// set c2 in the stack so we traverse it later. We need to keep track of a pointer in
+			// the stack while we traverse. The second pointer added is the one that will be
+			// traversed first
+			ptr ++;
+			stack[ ptr ] = c2;
+
+			ptr ++;
+			stack[ ptr ] = c1;
+
+		}
+
+	}
+
+	return found;
+
+}
+
+
+				
+
+	struct Material {
+
+		vec3 color;
+		int map;
+
+		float metalness;
+		int metalnessMap;
+
+		float roughness;
+		int roughnessMap;
+
+		float ior;
+		float transmission;
+		int transmissionMap;
+
+		vec3 emissive;
+		float emissiveIntensity;
+		int emissiveMap;
+
+		int normalMap;
+		vec2 normalScale;
+
+		float opacity;
+		float alphaTest;
+
+	};
+
+
+
+				
+
+	// https://google.github.io/filament/Filament.md.html#materialsystem/diffusebrdf
+	float schlickFresnel( float cosine, float f0 ) {
+
+		return f0 + ( 1.0 - f0 ) * pow( 1.0 - cosine, 5.0 );
+
+	}
+
+	// https://raytracing.github.io/books/RayTracingInOneWeekend.html#dielectrics/schlickapproximation
+	float schlickFresnelFromIor( float cosine, float iorRatio ) {
+
+		// Schlick approximation
+		float r_0 = pow( ( 1.0 - iorRatio ) / ( 1.0 + iorRatio ), 2.0 );
+		return schlickFresnel( cosine, r_0 );
+
+	}
+
+	// forms a basis with the normal vector as Z
+	mat3 getBasisFromNormal( vec3 normal ) {
+
+		vec3 other;
+		if ( abs( normal.x ) > 0.5 ) {
+
+			other = vec3( 0.0, 1.0, 0.0 );
+
+		} else {
+
+			other = vec3( 1.0, 0.0, 0.0 );
+
+		}
+
+		vec3 ortho = normalize( cross( normal, other ) );
+		vec3 ortho2 = normalize( cross( normal, ortho ) );
+		return mat3( ortho2, ortho, normal );
+
+	}
+
+	vec3 getHalfVector( vec3 a, vec3 b ) {
+
+		return normalize( a + b );
+
+	}
+
+	// The discrepancy between interpolated surface normal and geometry normal can cause issues when a ray
+	// is cast that is on the top side of the geometry normal plane but below the surface normal plane. If
+	// we find a ray like that we ignore it to avoid artifacts.
+	// This function returns if the direction is on the same side of both planes.
+	bool isDirectionValid( vec3 direction, vec3 surfaceNormal, vec3 geometryNormal ) {
+
+		bool aboveSurfaceNormal = dot( direction, surfaceNormal ) > 0.0;
+		bool aboveGeometryNormal = dot( direction, geometryNormal ) > 0.0;
+		return aboveSurfaceNormal == aboveGeometryNormal;
+
+	}
+
+	vec3 getHemisphereSample( vec3 n, vec2 uv ) {
+
+		// https://www.rorydriscoll.com/2009/01/07/better-sampling/
+		// https://graphics.pixar.com/library/OrthonormalB/paper.pdf
+		float sign = n.z == 0.0 ? 1.0 : sign( n.z );
+		float a = - 1.0 / ( sign + n.z );
+		float b = n.x * n.y * a;
+		vec3 b1 = vec3( 1.0 + sign * n.x * n.x * a, sign * b, - sign * n.x );
+		vec3 b2 = vec3( b, sign + n.y * n.y * a, - n.y );
+
+		float r = sqrt( uv.x );
+		float theta = 2.0 * PI * uv.y;
+		float x = r * cos( theta );
+		float y = r * sin( theta );
+		return x * b1 + y * b2 + sqrt( 1.0 - uv.x ) * n;
+
+	}
+
+	// https://www.shadertoy.com/view/wltcRS
+	uvec4 s0;
+
+	void rng_initialize(vec2 p, int frame) {
+
+		// white noise seed
+		s0 = uvec4( p, uint( frame ), uint( p.x ) + uint( p.y ) );
+
+	}
+
+	// https://www.pcg-random.org/
+	void pcg4d( inout uvec4 v ) {
+
+		v = v * 1664525u + 1013904223u;
+		v.x += v.y * v.w;
+		v.y += v.z * v.x;
+		v.z += v.x * v.y;
+		v.w += v.y * v.z;
+		v = v ^ ( v >> 16u );
+		v.x += v.y*v.w;
+		v.y += v.z*v.x;
+		v.z += v.x*v.y;
+		v.w += v.y*v.z;
+
+	}
+
+	float rand() {
+
+		pcg4d(s0);
+		return float( s0.x ) / float( 0xffffffffu );
+
+	}
+
+	vec2 rand2() {
+
+		pcg4d( s0 );
+		return vec2( s0.xy ) / float(0xffffffffu);
+
+	}
+
+	vec3 rand3() {
+
+		pcg4d(s0);
+		return vec3( s0.xyz ) / float( 0xffffffffu );
+
+	}
+
+	vec4 rand4() {
+
+		pcg4d(s0);
+		return vec4(s0)/float(0xffffffffu);
+
+	}
+
+	// https://github.com/mrdoob/three.js/blob/dev/src/math/Vector3.js#L724
+	vec3 randDirection() {
+
+		vec2 r = rand2();
+		float u = ( r.x - 0.5 ) * 2.0;
+		float t = r.y * PI * 2.0;
+		float f = sqrt( 1.0 - u * u );
+
+		return vec3( f * cos( t ), f * sin( t ), u );
+
+	}
+
+				
+
+struct SurfaceRec {
+	vec3 normal;
+	vec3 faceNormal;
+	bool frontFace;
+	float roughness;
+	float filteredRoughness;
+	float metalness;
+	vec3 color;
+	vec3 emission;
+	float transmission;
+	float ior;
+};
+
+struct SampleRec {
+	float pdf;
+	vec3 direction;
+	vec3 color;
+};
+
+
+// The GGX functions provide sampling and distribution information for normals as output so
+// in order to get probability of scatter direction the half vector must be computed and provided.
+// [0] https://www.cs.cornell.edu/~srm/publications/EGSR07-btdf.pdf
+// [1] https://hal.archives-ouvertes.fr/hal-01509746/document
+// [2] http://jcgt.org/published/0007/04/01/
+// [4] http://jcgt.org/published/0003/02/03/
+
+// trowbridge-reitz === GGX === GTR
+
+vec3 ggxDirection( vec3 incidentDir, float roughnessX, float roughnessY, float random1, float random2 ) {
+
+	// TODO: try GGXVNDF implementation from reference [2], here. Needs to update ggxDistribution
+	// function below, as well
+
+	// Implementation from reference [1]
+	// stretch view
+	vec3 V = normalize( vec3( roughnessX * incidentDir.x, roughnessY * incidentDir.y, incidentDir.z ) );
+
+	// orthonormal basis
+	vec3 T1 = ( V.z < 0.9999 ) ? normalize( cross( V, vec3( 0.0, 0.0, 1.0 ) ) ) : vec3( 1.0, 0.0, 0.0 );
+	vec3 T2 = cross( T1, V );
+
+	// sample point with polar coordinates (r, phi)
+	float a = 1.0 / ( 1.0 + V.z );
+	float r = sqrt( random1 );
+	float phi = ( random2 < a ) ? random2 / a * PI : PI + ( random2 - a ) / ( 1.0 - a ) * PI;
+	float P1 = r * cos( phi );
+	float P2 = r * sin( phi ) * ( ( random2 < a ) ? 1.0 : V.z );
+
+	// compute normal
+	vec3 N = P1 * T1 + P2 * T2 + V * sqrt( max( 0.0, 1.0 - P1 * P1 - P2 * P2 ) );
+
+	// unstretch
+	N = normalize( vec3( roughnessX * N.x, roughnessY * N.y, max( 0.0, N.z ) ) );
+
+	return N;
+
+}
+
+// Below are PDF and related functions for use in a Monte Carlo path tracer
+// as specified in Appendix B of the following paper
+// See equation (2) from reference [2]
+float ggxLamda( float theta, float roughness ) {
+
+	float tanTheta = tan( theta );
+	float tanTheta2 = tanTheta * tanTheta;
+	float alpha2 = roughness * roughness;
+
+	float numerator = - 1.0 + sqrt( 1.0 + alpha2 * tanTheta2 );
+	return numerator / 2.0;
+
+}
+
+// See equation (2) from reference [2]
+float ggxShadowMaskG1( float theta, float roughness ) {
+
+	return 1.0 / ( 1.0 + ggxLamda( theta, roughness ) );
+
+}
+
+// See equation (125) from reference [4]
+float ggxShadowMaskG2( vec3 wi, vec3 wo, float roughness ) {
+
+	float incidentTheta = acos( wi.z );
+	float scatterTheta = acos( wo.z );
+	return 1.0 / ( 1.0 + ggxLamda( incidentTheta, roughness ) + ggxLamda( scatterTheta, roughness ) );
+
+}
+
+float ggxDistribution( vec3 halfVector, float roughness ) {
+
+	// See equation (33) from reference [0]
+	float a2 = roughness * roughness;
+	float cosTheta = halfVector.z;
+	float cosTheta4 = pow( cosTheta, 4.0 );
+
+	if ( cosTheta == 0.0 ) return 0.0;
+
+	float theta = acos( halfVector.z );
+	float tanTheta = tan( theta );
+	float tanTheta2 = pow( tanTheta, 2.0 );
+
+	float denom = PI * cosTheta4 * pow( a2 + tanTheta2, 2.0 );
+	return a2 / denom;
+
+	// See equation (1) from reference [2]
+	// const { x, y, z } = halfVector;
+	// const a2 = roughness * roughness;
+	// const mult = x * x / a2 + y * y / a2 + z * z;
+	// const mult2 = mult * mult;
+
+	// return 1.0 / Math.PI * a2 * mult2;
+
+}
+
+// See equation (3) from reference [2]
+float ggxPDF( vec3 wi, vec3 halfVector, float roughness ) {
+
+	float incidentTheta = acos( wi.z );
+	float D = ggxDistribution( halfVector, roughness );
+	float G1 = ggxShadowMaskG1( incidentTheta, roughness );
+
+	return D * G1 * max( 0.0, dot( wi, halfVector ) ) / wi.z;
+
+}
+
+
+// diffuse
+float diffusePDF( vec3 wo, vec3 wi, SurfaceRec surf ) {
+
+	// https://raytracing.github.io/books/RayTracingTheRestOfYourLife.html#lightscattering/thescatteringpdf
+	float cosValue = wi.z;
+	return cosValue / PI;
+
+}
+
+vec3 diffuseDirection( vec3 wo, SurfaceRec surf ) {
+
+	vec3 lightDirection = randDirection();
+	lightDirection.z += 1.0;
+	lightDirection = normalize( lightDirection );
+
+	return lightDirection;
+
+}
+
+vec3 diffuseColor( vec3 wo, vec3 wi, SurfaceRec surf ) {
+
+	// TODO: scale by 1 - F here
+	// note on division by PI
+	// https://seblagarde.wordpress.com/2012/01/08/pi-or-not-to-pi-in-game-lighting-equation/
+	float metalFactor = ( 1.0 - surf.metalness ) * wi.z / ( PI * PI );
+	float transmissionFactor = 1.0 - surf.transmission;
+	return surf.color * metalFactor * transmissionFactor;
+
+}
+
+// specular
+float specularPDF( vec3 wo, vec3 wi, SurfaceRec surf ) {
+
+	// See equation (17) in http://jcgt.org/published/0003/02/03/
+	float filteredRoughness = surf.filteredRoughness;
+	vec3 halfVector = getHalfVector( wi, wo );
+	return ggxPDF( wi, halfVector, filteredRoughness ) / ( 4.0 * dot( wi, halfVector ) );
+
+}
+
+vec3 specularDirection( vec3 wo, SurfaceRec surf ) {
+
+	// sample ggx vndf distribution which gives a new normal
+	float filteredRoughness = surf.filteredRoughness;
+	vec3 halfVector = ggxDirection(
+		wo,
+		filteredRoughness,
+		filteredRoughness,
+		rand(),
+		rand()
+	);
+
+	// apply to new ray by reflecting off the new normal
+	return - reflect( wo, halfVector );
+
+}
+
+vec3 specularColor( vec3 wo, vec3 wi, SurfaceRec surf ) {
+
+	// if roughness is set to 0 then D === NaN which results in black pixels
+	float metalness = surf.metalness;
+	float ior = surf.ior;
+	bool frontFace = surf.frontFace;
+	float filteredRoughness = surf.filteredRoughness;
+
+	vec3 halfVector = getHalfVector( wo, wi );
+	float iorRatio = frontFace ? 1.0 / ior : ior;
+	float G = ggxShadowMaskG2( wi, wo, filteredRoughness );
+	float D = ggxDistribution( halfVector, filteredRoughness );
+
+	float F = schlickFresnelFromIor( dot( wi, halfVector ), iorRatio );
+	float cosTheta = min( wo.z, 1.0 );
+	float sinTheta = sqrt( 1.0 - cosTheta * cosTheta );
+	bool cannotRefract = iorRatio * sinTheta > 1.0;
+	if ( cannotRefract ) {
+
+		F = 1.0;
+
+	}
+
+	vec3 color = mix( vec3( 1.0 ), surf.color, metalness );
+	color = mix( color, vec3( 1.0 ), F );
+	color *= G * D / ( 4.0 * abs( wi.z * wo.z ) );
+	color *= mix( F, 1.0, metalness );
+	color *= wi.z; // scale the light by the direction the light is coming in from
+
+	return color;
+
+}
+
+/*
+// transmission
+function transmissionPDF( wo, wi, material, surf ) {
+
+	// See section 4.2 in https://www.cs.cornell.edu/~srm/publications/EGSR07-btdf.pdf
+
+	const { roughness, ior } = material;
+	const { frontFace } = hit;
+	const ratio = frontFace ? ior : 1 / ior;
+	const minRoughness = Math.max( roughness, MIN_ROUGHNESS );
+
+	halfVector.set( 0, 0, 0 ).addScaledVector( wi, ratio ).addScaledVector( wo, 1.0 ).normalize().multiplyScalar( - 1 );
+
+	const denom = Math.pow( ratio * halfVector.dot( wi ) + 1.0 * halfVector.dot( wo ), 2.0 );
+	return ggxPDF( wo, halfVector, minRoughness ) / denom;
+
+}
+
+function transmissionDirection( wo, hit, material, lightDirection ) {
+
+	const { roughness, ior } = material;
+	const { frontFace } = hit;
+	const ratio = frontFace ? 1 / ior : ior;
+	const minRoughness = Math.max( roughness, MIN_ROUGHNESS );
+
+	// sample ggx vndf distribution which gives a new normal
+	ggxDirection(
+		wo,
+		minRoughness,
+		minRoughness,
+		Math.random(),
+		Math.random(),
+		halfVector,
+	);
+
+	// apply to new ray by reflecting off the new normal
+	tempDir.copy( wo ).multiplyScalar( - 1 );
+	refract( tempDir, halfVector, ratio, lightDirection );
+
+}
+
+function transmissionColor( wo, wi, material, hit, colorTarget ) {
+
+	const { metalness, transmission } = material;
+	colorTarget
+		.copy( material.color )
+		.multiplyScalar( ( 1.0 - metalness ) * wo.z )
+		.multiplyScalar( transmission );
+
+}
+*/
+
+// TODO: This is just using a basic cosine-weighted specular distribution with an
+// incorrect PDF value at the moment. Update it to correctly use a GGX distribution
+float transmissionPDF( vec3 wo, vec3 wi, SurfaceRec surf ) {
+
+	float ior = surf.ior;
+	bool frontFace = surf.frontFace;
+
+	float ratio = frontFace ? 1.0 / ior : ior;
+	float cosTheta = min( wo.z, 1.0 );
+	float sinTheta = sqrt( 1.0 - cosTheta * cosTheta );
+	float reflectance = schlickFresnelFromIor( cosTheta, ratio );
+	bool cannotRefract = ratio * sinTheta > 1.0;
+	if ( cannotRefract ) {
+
+		return 0.0;
+
+	}
+
+	return 1.0 / ( 1.0 - reflectance );
+
+}
+
+vec3 transmissionDirection( vec3 wo, SurfaceRec surf ) {
+
+	float roughness = surf.roughness;
+	float ior = surf.ior;
+	bool frontFace = surf.frontFace;
+	float ratio = frontFace ? 1.0 / ior : ior;
+
+	vec3 lightDirection = refract( - wo, vec3( 0.0, 0.0, 1.0 ), ratio );
+	lightDirection += randDirection() * roughness;
+	return normalize( lightDirection );
+
+}
+
+vec3 transmissionColor( vec3 wo, vec3 wi, SurfaceRec surf ) {
+
+	float metalness = surf.metalness;
+	float transmission = surf.transmission;
+
+	vec3 color = surf.color;
+	color *= ( 1.0 - metalness );
+	color *= transmission;
+
+	return color;
+
+}
+
+float bsdfPdf( vec3 wo, vec3 wi, SurfaceRec surf ) {
+
+	float ior = surf.ior;
+	float metalness = surf.metalness;
+	float transmission = surf.transmission;
+	bool frontFace = surf.frontFace;
+
+	float ratio = frontFace ? 1.0 / ior : ior;
+	float cosTheta = min( wo.z, 1.0 );
+	float sinTheta = sqrt( 1.0 - cosTheta * cosTheta );
+	float reflectance = schlickFresnelFromIor( cosTheta, ratio );
+	bool cannotRefract = ratio * sinTheta > 1.0;
+	if ( cannotRefract ) {
+
+		reflectance = 1.0;
+
+	}
+
+	float spdf = 0.0;
+	float dpdf = 0.0;
+	float tpdf = 0.0;
+
+	if ( wi.z < 0.0 ) {
+
+		tpdf = transmissionPDF( wo, wi, surf );
+
+	} else {
+
+		spdf = specularPDF( wo, wi, surf );
+		dpdf = diffusePDF( wo, wi, surf );
+
+	}
+
+	float transSpecularProb = mix( reflectance, 1.0, metalness );
+	float diffSpecularProb = 0.5 + 0.5 * metalness;
+	float pdf =
+		spdf * transmission * transSpecularProb
+		+ tpdf * transmission * ( 1.0 - transSpecularProb )
+		+ spdf * ( 1.0 - transmission ) * diffSpecularProb
+		+ dpdf * ( 1.0 - transmission ) * ( 1.0 - diffSpecularProb );
+
+	return pdf;
+
+}
+
+vec3 bsdfColor( vec3 wo, vec3 wi, SurfaceRec surf ) {
+
+	vec3 color = vec3( 0.0 );
+	if ( wi.z < 0.0 ) {
+
+		color = transmissionColor( wo, wi, surf );
+
+	} else {
+
+		color = diffuseColor( wo, wi, surf );
+		color *= 1.0 - surf.transmission;
+
+		color += specularColor( wo, wi, surf );
+
+	}
+
+	return color;
+
+}
+
+SampleRec bsdfSample( vec3 wo, SurfaceRec surf ) {
+
+	float ior = surf.ior;
+	float metalness = surf.metalness;
+	float transmission = surf.transmission;
+	bool frontFace = surf.frontFace;
+
+	float ratio = frontFace ? 1.0 / ior : ior;
+	float cosTheta = min( wo.z, 1.0 );
+	float sinTheta = sqrt( 1.0 - cosTheta * cosTheta );
+	float reflectance = schlickFresnelFromIor( cosTheta, ratio );
+	bool cannotRefract = ratio * sinTheta > 1.0;
+	if ( cannotRefract ) {
+
+		reflectance = 1.0;
+
+	}
+
+	SampleRec result;
+	if ( rand() < transmission ) {
+
+		float specularProb = mix( reflectance, 1.0, metalness );
+		if ( rand() < specularProb ) {
+
+			result.direction = specularDirection( wo, surf );
+
+		} else {
+
+			result.direction = transmissionDirection( wo, surf );
+
+		}
+
+	} else {
+
+		float specularProb = 0.5 + 0.5 * metalness;
+		if ( rand() < specularProb ) {
+
+			result.direction = specularDirection( wo, surf );
+
+		} else {
+
+			result.direction = diffuseDirection( wo, surf );
+
+		}
+
+	}
+
+	result.pdf = bsdfPdf( wo, result.direction, surf );
+	result.color = bsdfColor( wo, result.direction, surf );
+	return result;
+
+}
+
+
+				#ifdef USE_ENVMAP
+
+				uniform float environmentBlur;
+				uniform sampler2D environmentMap;
+				uniform mat3 environmentRotation;
+
+				#else
+
+				uniform vec3 gradientTop;
+				uniform vec3 gradientBottom;
+
+				#endif
+
+				#if GRADIENT_BG
+
+				uniform vec3 bgGradientTop;
+				uniform vec3 bgGradientBottom;
+
+				#endif
+
+				uniform mat4 cameraWorldMatrix;
+				uniform mat4 invProjectionMatrix;
+				uniform sampler2D normalAttribute;
+				uniform sampler2D tangentAttribute;
+				uniform sampler2D uvAttribute;
+				uniform usampler2D materialIndexAttribute;
+				uniform BVH bvh;
+				uniform float environmentIntensity;
+				uniform float filterGlossyFactor;
+				uniform int seed;
+				uniform float opacity;
+				uniform Material materials[ MATERIAL_LENGTH ];
+				uniform sampler2DArray textures;
+				varying vec2 vUv;
+
+				void main() {
+
+					rng_initialize( gl_FragCoord.xy, seed );
+
+					// get [-1, 1] normalized device coordinates
+					vec2 ndc = 2.0 * vUv - vec2( 1.0 );
+					vec3 rayOrigin, rayDirection;
+					ndcToCameraRay( ndc, cameraWorldMatrix, invProjectionMatrix, rayOrigin, rayDirection );
+
+					// Lambertian render
+					gl_FragColor = vec4( 0.0 );
+
+					vec3 throughputColor = vec3( 1.0 );
+
+					// hit results
+					uvec4 faceIndices = uvec4( 0u );
+					vec3 faceNormal = vec3( 0.0, 0.0, 1.0 );
+					vec3 barycoord = vec3( 0.0 );
+					float side = 1.0;
+					float dist = 0.0;
+					float accumulatedRoughness = 0.0;
+					int i;
+					int transparentTraversals = TRANSPARENT_TRAVERSALS;
+					for ( i = 0; i < BOUNCES; i ++ ) {
+
+						if ( ! bvhIntersectFirstHit( bvh, rayOrigin, rayDirection, faceIndices, faceNormal, barycoord, side, dist ) ) {
+
+							#if GRADIENT_BG
+
+							if ( i == 0 ) {
+
+								rayDirection = normalize( rayDirection + randDirection() * 0.05 );
+								float value = ( rayDirection.y + 1.0 ) / 2.0;
+
+								value = pow( value, 2.0 );
+
+								gl_FragColor = vec4( mix( bgGradientBottom, bgGradientTop, value ), 1.0 );
+								break;
+
+							}
+
+							#endif
+
+							#ifdef USE_ENVMAP
+
+                            vec3 skyColor = textureCubeUV( environmentMap, environmentRotation * rayDirection, environmentBlur ).rgb;
+
+							#else
+
+							rayDirection = normalize( rayDirection );
+							float value = ( rayDirection.y + 1.0 ) / 2.0;
+							vec3 skyColor = mix( gradientBottom, gradientTop, value );
+
+							#endif
+
+							gl_FragColor += vec4( skyColor * throughputColor * environmentIntensity, 1.0 );
+
+							break;
+
+						}
+
+						uint materialIndex = uTexelFetch1D( materialIndexAttribute, faceIndices.x ).r;
+						Material material = materials[ materialIndex ];
+
+						vec2 uv = textureSampleBarycoord( uvAttribute, barycoord, faceIndices.xyz ).xy;
+
+						// albedo
+						vec4 albedo = vec4( material.color, material.opacity );
+						if ( material.map != - 1 ) {
+
+							albedo *= texture2D( textures, vec3( uv, material.map ) );
+
+						}
+
+						// possibly skip this sample if it's transparent or alpha test is enabled
+						// alpha test is disabled when it === 0
+						float alphaTest = material.alphaTest;
+						bool useAlphaTest = alphaTest != 0.0;
+						if (
+							useAlphaTest && albedo.a < alphaTest
+							|| ! useAlphaTest && albedo.a < rand()
+						) {
+
+							vec3 point = rayOrigin + rayDirection * dist;
+							rayOrigin += rayDirection * dist - faceNormal * RAY_OFFSET;
+
+							// only allow a limited number of transparency discards otherwise we could
+							// crash the context with too long a loop.
+							i -= sign( transparentTraversals );
+							transparentTraversals -= sign( transparentTraversals );
+							continue;
+
+						}
+
+						// fetch the interpolated smooth normal
+						vec3 normal = normalize( textureSampleBarycoord(
+							normalAttribute,
+							barycoord,
+							faceIndices.xyz
+						).xyz );
+
+						// roughness
+						float roughness = material.roughness;
+						if ( material.roughnessMap != - 1 ) {
+
+							roughness *= texture2D( textures, vec3( uv, material.roughnessMap ) ).g;
+
+						}
+
+						// metalness
+						float metalness = material.metalness;
+						if ( material.metalnessMap != - 1 ) {
+
+							metalness *= texture2D( textures, vec3( uv, material.metalnessMap ) ).b;
+
+						}
+
+						// emission
+						vec3 emission = material.emissiveIntensity * material.emissive;
+						if ( material.emissiveMap != - 1 ) {
+
+							emission *= texture2D( textures, vec3( uv, material.emissiveMap ) ).xyz;
+
+						}
+
+						// transmission
+						float transmission = material.transmission;
+						if ( material.transmissionMap != - 1 ) {
+
+							transmission *= texture2D( textures, vec3( uv, material.transmissionMap ) ).r;
+
+						}
+
+						// normal
+						if ( material.normalMap != - 1 ) {
+
+							vec4 tangentSample = textureSampleBarycoord(
+								tangentAttribute,
+								barycoord,
+								faceIndices.xyz
+							);
+
+							// some provided tangents can be malformed (0, 0, 0) causing the normal to be degenerate
+							// resulting in NaNs and slow path tracing.
+							if ( length( tangentSample.xyz ) > 0.0 ) {
+
+								vec3 tangent = normalize( tangentSample.xyz );
+								vec3 bitangent = normalize( cross( normal, tangent ) * tangentSample.w );
+								mat3 vTBN = mat3( tangent, bitangent, normal );
+
+								vec3 texNormal = texture2D( textures, vec3( uv, material.normalMap ) ).xyz * 2.0 - 1.0;
+								texNormal.xy *= material.normalScale;
+								normal = vTBN * texNormal;
+
+							}
+
+						}
+
+						normal *= side;
+
+						SurfaceRec surfaceRec;
+						surfaceRec.normal = normal;
+						surfaceRec.faceNormal = faceNormal;
+						surfaceRec.frontFace = side == 1.0;
+						surfaceRec.transmission = transmission;
+						surfaceRec.ior = material.ior;
+						surfaceRec.emission = emission;
+						surfaceRec.metalness = metalness;
+						surfaceRec.color = albedo.rgb;
+						surfaceRec.roughness = roughness;
+
+						// Compute the filtered roughness value to use during specular reflection computations. A minimum
+						// value of 1e-6 is needed because the GGX functions do not work with a roughness value of 0 and
+						// the accumulated roughness value is scaled by a user setting and a "magic value" of 5.0.
+						// If we're exiting something transmissive then scale the factor down significantly so we can retain
+						// sharp internal reflections
+						surfaceRec.filteredRoughness = clamp(
+							max( surfaceRec.roughness, accumulatedRoughness * filterGlossyFactor * 5.0 ),
+							1e-3,
+							1.0
+						);
+
+						mat3 normalBasis = getBasisFromNormal( surfaceRec.normal );
+						mat3 invBasis = inverse( normalBasis );
+
+						vec3 outgoing = - normalize( invBasis * rayDirection );
+						SampleRec sampleRec = bsdfSample( outgoing, surfaceRec );
+
+						// adjust the hit point by the surface normal by a factor of some offset and the
+						// maximum component-wise value of the current point to accommodate floating point
+						// error as values increase.
+						vec3 point = rayOrigin + rayDirection * dist;
+						vec3 absPoint = abs( point );
+						float maxPoint = max( absPoint.x, max( absPoint.y, absPoint.z ) );
+						rayDirection = normalize( normalBasis * sampleRec.direction );
+
+						bool isBelowSurface = dot( rayDirection, faceNormal ) < 0.0;
+						rayOrigin = point + faceNormal * ( maxPoint + 1.0 ) * ( isBelowSurface ? - RAY_OFFSET : RAY_OFFSET );
+
+						// accumulate a roughness value to offset diffuse, specular, diffuse rays that have high contribution
+						// to a single pixel resulting in fireflies
+						if ( ! isBelowSurface ) {
+
+							// determine if this is a rough normal or not by checking how far off straight up it is
+							vec3 halfVector = normalize( outgoing + sampleRec.direction );
+							accumulatedRoughness += sin( acos( halfVector.z ) );
+
+						}
+
+						// accumulate color
+						gl_FragColor.rgb += ( emission * throughputColor );
+
+						// skip the sample if our PDF or ray is impossible
+						if ( sampleRec.pdf <= 0.0 || ! isDirectionValid( rayDirection, normal, faceNormal) ) {
+
+							break;
+
+						}
+
+						throughputColor *= sampleRec.color / sampleRec.pdf;
+
+						// discard the sample if there are any NaNs
+						if ( any( isnan( throughputColor ) ) || any( isinf( throughputColor ) ) ) {
+
+							break;
+
+						}
+
+					}
+
+					gl_FragColor.a = opacity;
+
+				}`);
+        </script>
+    </body>
+</html>
